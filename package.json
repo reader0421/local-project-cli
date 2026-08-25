@@ -1,0 +1,42 @@
+{
+  "name": "local-project-cli",
+  "version": "0.1.0",
+  "description": "A lightweight macOS CLI for organizing local projects, repositories and custom openers.",
+  "license": "MIT",
+  "keywords": [
+    "cli",
+    "project-manager",
+    "repository",
+    "git",
+    "macos"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reader0421/local-project-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/reader0421/local-project-cli/issues"
+  },
+  "homepage": "https://github.com/reader0421/local-project-cli#readme",
+  "type": "module",
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "README.md"
+  ],
+  "bin": {
+    "project": "bin/project.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check bin/project.js && node --check src/cli.js && node --check src/scanner.js",
+    "prepack": "npm run check && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+*.tgz
+.DS_Store
+pnpm-lock.yaml
+yarn.lock
+
+# Local registries and internal design notes are not source artifacts.
+projects.json
+outputs/
