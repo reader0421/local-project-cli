@@ -1,8 +1,16 @@
 node_modules/
+.pnpm-store/
+desktop/out/
+desktop/release/
+desktop/resources/AppIcon.icns
+desktop/vendor/electron/*.zip
+design-qa-artifacts/
+design-qa.md
 coverage/
 *.tgz
 .DS_Store
 pnpm-lock.yaml
+!desktop/pnpm-lock.yaml
 yarn.lock
 
 # Local registries and internal design notes are not source artifacts.

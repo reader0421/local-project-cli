@@ -1,9 +1,61 @@
-import { access, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { createEmptyRegistry, SCHEMA_VERSION } from './constants.js';
+
+const registryRevisions = new WeakMap();
+const LOCK_RETRY_COUNT = 40;
+const LOCK_RETRY_DELAY_MS = 50;
+const STALE_LOCK_MS = 15_000;
+
+function revisionOf(source) {
+  return createHash('sha256').update(source).digest('hex');
+}
+
+async function readCurrentRevision(path) {
+  try {
+    return revisionOf(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function withRegistryLock(path, action) {
+  const lockPath = `${path}.lock`;
+  await mkdir(dirname(path), { recursive: true });
+  let lock;
+  for (let attempt = 0; attempt < LOCK_RETRY_COUNT; attempt += 1) {
+    try {
+      lock = await open(lockPath, 'wx');
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try {
+        const lockStat = await stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > STALE_LOCK_MS) {
+          await unlink(lockPath);
+          continue;
+        }
+      } catch (lockError) {
+        if (lockError.code === 'ENOENT') continue;
+        throw lockError;
+      }
+      await new Promise((done) => setTimeout(done, LOCK_RETRY_DELAY_MS));
+    }
+  }
+  if (!lock) throw new Error('注册表正在被其他进程修改，请稍后重试');
+  try {
+    return await action();
+  } finally {
+    await lock.close();
+    await unlink(lockPath).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+}
 
 export function resolveRegistryPath(explicitPath, environment = process.env) {
   const selected = explicitPath || environment.LOCAL_PROJECT_CLI_REGISTRY;
@@ -16,6 +68,7 @@ export async function loadRegistry(path, { create = true } = {}) {
     const registry = JSON.parse(source);
     const changed = normalizeRegistry(registry);
     validateRegistry(registry);
+    registryRevisions.set(registry, revisionOf(source));
     if (changed) await saveRegistry(path, registry);
     return registry;
   } catch (error) {
@@ -48,6 +101,14 @@ function normalizeRegistry(registry) {
         delete project.defaultOpenerId;
         changed = true;
       }
+      if (Array.isArray(project.repositories)) {
+        for (const repository of project.repositories) {
+          if (Object.hasOwn(repository, 'lastOpenerId')) {
+            delete repository.lastOpenerId;
+            changed = true;
+          }
+        }
+      }
     }
   }
   return changed;
@@ -55,10 +116,24 @@ function normalizeRegistry(registry) {
 
 export async function saveRegistry(path, registry) {
   validateRegistry(registry);
-  await mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
-  await rename(temporaryPath, path);
+  const expectedRevision = registryRevisions.get(registry);
+  await withRegistryLock(path, async () => {
+    const currentRevision = await readCurrentRevision(path);
+    if (expectedRevision !== undefined && currentRevision !== expectedRevision) {
+      const error = new Error('注册表已被其他进程修改，请重新读取后再操作');
+      error.code = 'REGISTRY_CONFLICT';
+      throw error;
+    }
+    const source = `${JSON.stringify(registry, null, 2)}\n`;
+    const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    await writeFile(temporaryPath, source, 'utf8');
+    await rename(temporaryPath, path);
+    registryRevisions.set(registry, revisionOf(source));
+  });
+}
+
+export function getRegistryRevision(registry) {
+  return registryRevisions.get(registry) || null;
 }
 
 export function validateRegistry(registry) {
@@ -103,6 +178,13 @@ export function validateRegistry(registry) {
   if (!registry.settings.defaultOpenerId || !openerIds.has(registry.settings.defaultOpenerId)) {
     throw new Error(`默认打开工具无效：${registry.settings.defaultOpenerId || '未设置'}`);
   }
+  for (const project of registry.projects) {
+    for (const repository of project.repositories) {
+      if (repository.defaultOpenerId && !openerIds.has(repository.defaultOpenerId)) {
+        throw new Error(`代码库默认打开工具无效：${project.name}/${repository.name} → ${repository.defaultOpenerId}`);
+      }
+    }
+  }
 }
 
 export function toSlug(value) {
@@ -125,6 +207,21 @@ export function addProject(registry, { name, workspacePath } = {}) {
   };
   if (workspacePath) project.workspacePath = resolve(workspacePath);
   registry.projects.push(project);
+  return project;
+}
+
+export function updateProject(registry, reference, { name } = {}) {
+  const project = findProject(registry, reference);
+  if (!project) throw new Error(`找不到项目：${reference}`);
+  const trimmedName = name?.trim();
+  if (!trimmedName) throw new Error('项目名称不能为空');
+  const slug = toSlug(trimmedName);
+  if (registry.projects.some((candidate) => candidate.id !== project.id && candidate.slug === slug)) {
+    throw new Error(`项目已存在：${trimmedName}`);
+  }
+  project.name = trimmedName;
+  project.slug = slug;
+  project.updatedAt = new Date().toISOString();
   return project;
 }
 
@@ -182,11 +279,43 @@ export async function addRepository(registry, project, { name, path, openerId, o
     createdAt: now,
     updatedAt: now,
   };
-  if (openerId) repository.lastOpenerId = openerId;
+  if (openerId) repository.defaultOpenerId = openerId;
   if (openTarget) repository.openTarget = resolve(physicalPath, openTarget);
   project.repositories.push(repository);
   project.updatedAt = now;
   return repository;
+}
+
+export function updateRepository(registry, reference, { name, defaultOpenerId } = {}) {
+  const found = findRepository(registry, reference);
+  if (!found) throw new Error(`找不到代码库：${reference}`);
+  let changed = false;
+  if (name !== undefined) {
+    const trimmedName = name?.trim();
+    if (!trimmedName) throw new Error('代码库名称不能为空');
+    const slug = toSlug(trimmedName);
+    if (found.project.repositories.some((candidate) => candidate.id !== found.repository.id && candidate.slug === slug)) {
+      throw new Error(`代码库名称已存在：${trimmedName}`);
+    }
+    found.repository.name = trimmedName;
+    found.repository.slug = slug;
+    changed = true;
+  }
+  if (defaultOpenerId !== undefined) {
+    if (defaultOpenerId === null || defaultOpenerId === '') delete found.repository.defaultOpenerId;
+    else {
+      if (!registry.openers.some((opener) => opener.id === defaultOpenerId)) {
+        throw new Error(`找不到打开工具：${defaultOpenerId}`);
+      }
+      found.repository.defaultOpenerId = defaultOpenerId;
+    }
+    changed = true;
+  }
+  if (!changed) throw new Error('至少提供一个需要修改的代码库字段');
+  const now = new Date().toISOString();
+  found.repository.updatedAt = now;
+  found.project.updatedAt = now;
+  return found.repository;
 }
 
 export function removeProject(registry, reference) {

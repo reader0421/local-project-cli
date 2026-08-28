@@ -20,7 +20,7 @@ const TERMINAL_APPLESCRIPT_ARGS = [
 
 export function resolveOpener(registry, project, repository, requestedId) {
   const openerId = requestedId
-    || repository?.lastOpenerId
+    || repository?.defaultOpenerId
     || registry.settings.defaultOpenerId
     || 'vscode';
   const opener = registry.openers.find((item) => item.id === openerId);
@@ -96,7 +96,7 @@ export function removeOpener(registry, id) {
     throw new Error(`不能删除默认打开工具：${id}；请先设置其他默认工具`);
   }
   const references = registry.projects.flatMap((project) => project.repositories
-    .filter((repository) => repository.lastOpenerId === id)
+    .filter((repository) => repository.defaultOpenerId === id)
     .map((repository) => `${project.name}/${repository.name}`));
   if (references.length) {
     throw new Error(`不能删除仍被代码库使用的打开工具：${references.join('、')}`);

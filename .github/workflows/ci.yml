@@ -8,7 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  cli:
+    name: CLI / Node.js ${{ matrix.node-version }}
     runs-on: macos-latest
     strategy:
       matrix:
@@ -23,3 +24,26 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm pack --dry-run
+
+  desktop:
+    name: Desktop
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Test
+        working-directory: desktop
+        run: pnpm test
+      - name: Build
+        working-directory: desktop
+        run: pnpm build

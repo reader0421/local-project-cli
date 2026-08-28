@@ -46,7 +46,15 @@ export async function scanRegistry(registry, {
     }
     results[projectIndex].repositories[repositoryIndex] = { repository, status };
     completed += 1;
-    onProgress?.({ completed, total: tasks.length });
+    onProgress?.({
+      completed,
+      total: tasks.length,
+      project: projects[projectIndex],
+      repository,
+      status,
+      projectIndex,
+      repositoryIndex,
+    });
   });
   return results;
 }

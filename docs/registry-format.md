@@ -17,7 +17,7 @@
           "name": "backend",
           "slug": "backend",
           "path": "/Users/example/code/demo/backend",
-          "lastOpenerId": "phpstorm",
+          "defaultOpenerId": "phpstorm",
           "createdAt": "2026-08-25T00:00:00.000Z",
           "updatedAt": "2026-08-25T00:00:00.000Z"
         }
@@ -50,7 +50,7 @@
 - `openers[].args` 中的 `{path}` 在执行时替换为仓库路径或 `openTarget`。
 - `openers[].mode` 可省略或设为 `terminal`；省略时后台启动，`terminal` 会在 macOS Terminal 中交互运行。
 - 同一工具的多个版本通过不同 opener id 和具体命令参数区分。
-- `Repository.lastOpenerId` 只记录该仓库上一次成功使用的工具。
+- `Repository.defaultOpenerId` 是显式设置的代码库默认工具；缺失时跟随全局默认。临时选择其他工具打开不会修改该字段。
 - `settings.defaultOpenerId` 是没有仓库历史选择时使用的全局默认值，只能在设置中显式修改。
 - CLI 保存时先写临时文件再原子替换原文件。
 
@@ -67,4 +67,4 @@ project opener default <id>
 project opener remove <id>
 ```
 
-默认 opener 或仍被 `Repository.lastOpenerId` 引用的 opener 不能删除。
+全局默认 opener 或仍被 `Repository.defaultOpenerId` 引用的 opener 不能删除。

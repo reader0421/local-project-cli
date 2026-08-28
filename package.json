@@ -1,6 +1,6 @@
 {
   "name": "local-project-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A lightweight macOS CLI for organizing local projects, repositories and custom openers.",
   "license": "MIT",
   "keywords": [
@@ -22,14 +22,17 @@
   "files": [
     "bin",
     "src",
-    "docs",
+    "docs/registry-format.md",
+    "docs/desktop-build.md",
+    "docs/assets/localproject-desktop.png",
+    "CHANGELOG.md",
     "README.md"
   ],
   "bin": {
     "project": "bin/project.js"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "check": "node --check bin/project.js && node --check src/cli.js && node --check src/scanner.js",
     "prepack": "npm run check && npm test"
   },

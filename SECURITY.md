@@ -6,6 +6,10 @@
 
 ## 配置边界
 
-Local Project CLI 会执行注册表中 opener 的 `command` 和 `args`。程序不会通过 shell 拼接执行这些参数，但恶意或被篡改的注册表仍可能启动不可信程序。请只使用自己创建或确认可信的注册表，不要直接运行来源不明的配置文件。
+LocalProject CLI 和 Desktop 都会执行注册表中 opener 的 `command` 和 `args`。程序不会通过 shell 拼接执行这些参数，但恶意或被篡改的注册表仍可能启动不可信程序。请只使用自己创建或确认可信的注册表，不要直接运行来源不明的配置文件。
 
 Terminal 模式必须把命令交给终端 shell 执行。实现会逐个引用 `command` 和 `args`，避免代码库路径被当作 shell 语法解析；但 opener 本身仍是用户授权执行的命令配置，安全边界与普通终端命令一致。
+
+Desktop 使用隔离的 Renderer：`contextIsolation` 和 Electron sandbox 保持开启，Renderer 不直接获得 Node.js 权限，只能通过受限 preload API 请求本机操作。引入新的 IPC 接口时，应在主进程中重新解析并校验项目、代码库或 opener 标识，不能直接信任 Renderer 传入的文件路径或命令。
+
+LocalProject 不提供云端账号、同步或遥测服务。Git 网络访问只发生在用户主动执行 Fetch、Pull 或 Push 时，并由本机 Git 使用代码库自身的远端和凭据完成。

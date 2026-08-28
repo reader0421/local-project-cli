@@ -1,0 +1,40 @@
+{
+  "name": "local-project-desktop",
+  "version": "0.1.1",
+  "productName": "LocalProject",
+  "description": "Desktop companion for Local Project CLI.",
+  "license": "MIT",
+  "author": "reader0421",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reader0421/local-project-cli.git"
+  },
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.0.9",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.config.js --host 127.0.0.1 --port 4173 --strictPort",
+    "build": "electron-vite build",
+    "package:mac": "pnpm test && pnpm build && node scripts/package-macos.mjs",
+    "package:mac:arm64": "pnpm package:mac -- --arch arm64",
+    "package:mac:x64": "pnpm package:mac -- --arch x64",
+    "preview": "electron-vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@phosphor-icons/vue": "^2.2.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/test-utils": "^2.4.11",
+    "electron": "38.8.6",
+    "@electron/packager": "^20.3.0",
+    "electron-vite": "^4.0.0",
+    "jsdom": "^30.0.1",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.10"
+  }
+}

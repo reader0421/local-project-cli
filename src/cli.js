@@ -12,7 +12,7 @@ import {
   resolveRegistryPath,
   saveRegistry,
 } from './registry.js';
-import { getGitStatus, getPushEligibility, pushRepository } from './git.js';
+import { fetchRepository, getGitStatus, getPushEligibility, pushRepository } from './git.js';
 import {
   addOpener,
   findOpener,
@@ -331,14 +331,14 @@ async function copyPath(path) {
   });
 }
 
-async function interactiveOpen(registry, registryPath, project, repository, prompter, chooseAnother = false) {
+async function interactiveOpen(registry, project, repository, prompter, chooseAnother = false) {
   let opener;
   if (chooseAnother) {
-    const remembered = repository.lastOpenerId || registry.settings.defaultOpenerId;
+    const configured = repository.defaultOpenerId || registry.settings.defaultOpenerId;
     const choices = [...registry.openers]
-      .sort((left, right) => Number(right.id === remembered) - Number(left.id === remembered))
+      .sort((left, right) => Number(right.id === configured) - Number(left.id === configured))
       .map((item) => ({
-        label: `${item.name}${item.id === remembered ? '（上次使用）' : ''}`,
+        label: `${item.name}${item.id === configured ? '（当前默认）' : ''}`,
         value: item.id,
       }));
     opener = resolveOpener(registry, project, repository, await prompter.select('选择打开工具', choices));
@@ -346,8 +346,6 @@ async function interactiveOpen(registry, registryPath, project, repository, prom
     opener = resolveOpener(registry, project, repository);
   }
   await openPath(opener, repository.openTarget || repository.path);
-  repository.lastOpenerId = opener.id;
-  await saveRegistry(registryPath, registry);
   return opener;
 }
 
@@ -380,10 +378,10 @@ async function interactiveRepositoryActions(registry, registryPath, project, rep
     if (action === 'back') return;
     try {
       if (action === 'open-default') {
-        const opener = await interactiveOpen(registry, registryPath, project, repository, prompter);
+        const opener = await interactiveOpen(registry, project, repository, prompter);
         notice = { error: false, message: `已使用 ${opener.name} 打开 ${project.name}/${repository.name}` };
       } else if (action === 'open-other') {
-        const opener = await interactiveOpen(registry, registryPath, project, repository, prompter, true);
+        const opener = await interactiveOpen(registry, project, repository, prompter, true);
         notice = { error: false, message: `已使用 ${opener.name} 打开 ${project.name}/${repository.name}` };
       } else if (action === 'copy') {
         await copyPath(repository.path);
@@ -654,10 +652,6 @@ export async function run(argv) {
     const opener = resolveOpener(registry, found.project, found.repository, options.with);
     const target = found.repository.openTarget || found.repository.path;
     const invocation = await openPath(opener, target, { dryRun: options['dry-run'] });
-    if (!options['dry-run']) {
-      found.repository.lastOpenerId = opener.id;
-      await saveRegistry(registryPath, registry);
-    }
     const shownCommand = invocation.displayCommand || invocation.command;
     const shownArgs = invocation.displayArgs || invocation.args;
     console.log(`${options['dry-run'] ? '将执行' : '已使用'} ${opener.name}：${shownCommand} ${shownArgs.join(' ')}`);

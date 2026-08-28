@@ -1,15 +1,18 @@
-# Local Project CLI
+# LocalProject
 
-一个面向 macOS 的轻量本地项目管理 CLI。它用单个 JSON 注册表组织项目和代码库，集中查看 Git 状态、安全推送未发布提交，并用可扩展的 opener 打开编辑器、IDE、终端或其他工具。
+一个面向 macOS 的轻量本地项目管理工具。仓库同时提供 npm CLI 和 Electron Desktop，它们使用同一份 JSON 注册表组织项目与代码库，集中查看 Git 状态、安全拉取或推送提交，并用可扩展的 opener 打开编辑器、IDE、终端或其他工具。
 
-- GitHub 仓库与 npm 包名：`local-project-cli`
-- 安装后的命令：`project`
+- CLI：npm 包 `local-project-cli`，安装后使用 `project` 命令。
+- Desktop：桌面应用 `LocalProject`，公开 Electron + Vue 源码和本机构建脚本。
+- 两者可以单独安装，不会互相覆盖，只共享 `~/.local-project-cli/registry.json`。
+
+![LocalProject Desktop 项目与 Git 状态界面](docs/assets/localproject-desktop.png)
 
 ## 环境要求
 
 - macOS
 - Node.js 20 或更高版本
-- Git（仅 Git 状态和推送功能需要）
+- Git（仅 Git 状态、获取、拉取和推送功能需要）
 
 ## 安装
 
@@ -160,7 +163,7 @@ project opener remove vscode-cli
 project open "示例项目/backend" --with vscode-cli
 ```
 
-成功打开后，该代码库会记住本次选择。其他代码库不受影响。
+通过 `--with` 或交互菜单临时选择其他工具只影响本次打开，不会修改代码库默认工具。代码库默认工具需要显式配置；未配置时跟随全局默认。
 
 ## Git 状态与安全推送
 
@@ -190,17 +193,42 @@ npm uninstall -g local-project-cli
 
 卸载程序不会删除 `~/.local-project-cli/registry.json`。如需彻底清理，请自行备份后删除该目录。
 
+## Desktop 桌面端
+
+LocalProject 提供项目、代码库、Git 状态、安全推送/拉取和 opener 管理界面。它不注册或覆盖全局 `project` 命令，只与 CLI 共享兼容的 `~/.local-project-cli/registry.json`。
+
+仓库只公开 macOS Desktop 源码，不提供官方 Desktop 二进制 Release 或自动更新服务。可以在 `desktop/` 中直接运行开发版，也可以为自己的 Mac 生成本机安装包；具体命令见 [Desktop 源码运行与本机打包](docs/desktop-build.md)。
+
+## 隐私与网络边界
+
+- 项目、代码库和 opener 配置只保存在本机注册表中，不上传到 LocalProject 服务。
+- 项目扫描只读取已登记目录的本地 Git 状态，不包含遥测或使用行为上报。
+- 只有用户主动执行获取远端状态、安全拉取或安全推送时，Git 才会访问代码库配置的远端。
+- opener 是本机可执行配置；只应添加自己安装或确认可信的应用与命令。
+
 ## 从源码开发
 
-本仓库使用 npm 和 `package-lock.json` 管理开发流程。请使用下面的 npm 命令；不需要运行 `pnpm link` 或配置 pnpm 的全局 bin 目录。
+CLI 位于仓库根目录，使用 npm 和 `package-lock.json`：
 
 ```bash
 git clone https://github.com/reader0421/local-project-cli.git
 cd local-project-cli
 npm ci
+npm run check
 npm test
 npm link
 project
+```
+
+Desktop 位于 `desktop/`，使用 pnpm 和独立的 `desktop/pnpm-lock.yaml`：
+
+```bash
+cd desktop
+corepack enable
+pnpm install --frozen-lockfile
+pnpm test
+pnpm build
+pnpm dev
 ```
 
 检查发布包内容：
@@ -209,9 +237,9 @@ project
 npm pack --dry-run
 ```
 
-项目当前没有运行时第三方依赖，也不需要转译或构建步骤。`npm pack` 生成的 tarball 就是发布产物。
+CLI 当前没有运行时第三方依赖，也不需要转译或构建步骤；`npm pack` 生成的 tarball 就是 CLI 发布产物。Desktop 使用 Vue、Electron 和 electron-vite，只公开源码和本机构建脚本。
 
-注册表完整格式见 [docs/registry-format.md](docs/registry-format.md)，参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请参考 [SECURITY.md](SECURITY.md)。
+注册表完整格式见 [docs/registry-format.md](docs/registry-format.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)，参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请参考 [SECURITY.md](SECURITY.md)。
 
 ## License
 

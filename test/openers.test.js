@@ -12,7 +12,7 @@ import {
   updateOpener,
 } from '../src/openers.js';
 
-test('repository remembered opener wins and custom application paths can be configured', () => {
+test('repository explicit default opener wins and custom application paths can be configured', () => {
   const registry = createEmptyRegistry();
   registry.openers.push({
     id: 'custom-ide-local',
@@ -22,12 +22,12 @@ test('repository remembered opener wins and custom application paths can be conf
   });
   registry.settings.defaultOpenerId = 'phpstorm';
   const project = { defaultOpenerId: 'xcode' };
-  const repository = { lastOpenerId: 'custom-ide-local' };
+  const repository = { defaultOpenerId: 'custom-ide-local' };
   const opener = resolveOpener(registry, project, repository);
   assert.equal(opener.id, 'custom-ide-local');
   assert.deepEqual(buildOpenCommand(opener, '/tmp/example-app').args, ['-a', '/Applications/Custom IDE.app', '/tmp/example-app']);
 
-  delete repository.lastOpenerId;
+  delete repository.defaultOpenerId;
   assert.equal(resolveOpener(registry, project, repository).id, 'phpstorm');
 });
 
@@ -55,14 +55,14 @@ test('custom openers can be added, updated, selected as default and removed safe
   assert.equal(registry.openers.some((item) => item.id === opener.id), false);
 });
 
-test('an opener remembered by a repository cannot be removed', () => {
+test('an opener configured as a repository default cannot be removed', () => {
   const registry = createEmptyRegistry();
   addOpener(registry, { id: 'zed', name: 'Zed', command: 'zed', args: ['{path}'] });
   registry.projects.push({
     id: 'demo',
     name: 'Demo',
     slug: 'demo',
-    repositories: [{ id: 'app', name: 'app', slug: 'app', path: '/tmp/app', lastOpenerId: 'zed' }],
+    repositories: [{ id: 'app', name: 'app', slug: 'app', path: '/tmp/app', defaultOpenerId: 'zed' }],
   });
   assert.throws(() => removeOpener(registry, 'zed'), /Demo\/app/);
 });

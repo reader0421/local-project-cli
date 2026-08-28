@@ -17,7 +17,7 @@ test('CLI exposes help and package version without creating a registry', async (
   const directory = await mkdtemp(join(tmpdir(), 'local-project-cli-meta-'));
   const registry = join(directory, 'registry.json');
   assert.match((await run(registry, '--help')).stdout, /Local Project CLI/);
-  assert.equal((await run(registry, '--version')).stdout.trim(), '0.1.0');
+  assert.equal((await run(registry, '--version')).stdout.trim(), '0.2.0');
   await assert.rejects(readFile(registry, 'utf8'), /ENOENT/);
 });
 
@@ -47,6 +47,8 @@ test('opener dry-run uses the configured command without launching an app', asyn
   const result = await run(registry, 'open', 'Demo/app', '--with', 'wechat-devtools', '--dry-run');
   assert.match(result.stdout, /微信开发者工具/);
   assert.match(result.stdout, /将执行/);
+  const data = JSON.parse(await readFile(registry, 'utf8'));
+  assert.equal('defaultOpenerId' in data.projects[0].repositories[0], false);
 });
 
 test('CLI manages custom openers and the global default', async () => {
