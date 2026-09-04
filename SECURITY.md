@@ -12,4 +12,6 @@ Terminal 模式必须把命令交给终端 shell 执行。实现会逐个引用 
 
 Desktop 使用隔离的 Renderer：`contextIsolation` 和 Electron sandbox 保持开启，Renderer 不直接获得 Node.js 权限，只能通过受限 preload API 请求本机操作。引入新的 IPC 接口时，应在主进程中重新解析并校验项目、代码库或 opener 标识，不能直接信任 Renderer 传入的文件路径或命令。
 
-LocalProject 不提供云端账号、同步或遥测服务。Git 网络访问只发生在用户主动执行 Fetch、Pull 或 Push 时，并由本机 Git 使用代码库自身的远端和凭据完成。
+项目 Webhook URL 可能包含用于触发流水线的访问 token，并会以明文保存在 registry 中。请限制该文件及备份的读取权限，不要提交或分享真实配置。Desktop 只在用户确认触发时，由主进程向已保存的 `http/https` 地址发送 POST；不会把 Renderer 临时传入的任意 URL 直接作为请求目标。
+
+LocalProject 不提供云端账号、同步或遥测服务。Git 网络访问只发生在用户主动执行 Fetch、Pull 或 Push 时，并由本机 Git 使用代码库自身的远端和凭据完成；Webhook 网络访问只发生在用户主动确认触发时。

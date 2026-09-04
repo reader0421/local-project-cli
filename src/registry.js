@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { createEmptyRegistry, SCHEMA_VERSION } from './constants.js';
+import { validateWebhookUrl } from './webhooks.js';
 
 const registryRevisions = new WeakMap();
 const LOCK_RETRY_COUNT = 40;
@@ -155,6 +156,20 @@ export function validateRegistry(registry) {
     if (projectIds.has(project.id) || projectSlugs.has(project.slug)) throw new Error(`项目重复：${project.name}`);
     projectIds.add(project.id);
     projectSlugs.add(project.slug);
+    if (project.webhooks !== undefined && !Array.isArray(project.webhooks)) {
+      throw new Error(`项目 ${project.name} 的 webhooks 必须是数组`);
+    }
+    const webhookIds = new Set();
+    const webhookNames = new Set();
+    for (const webhook of project.webhooks || []) {
+      const normalizedName = webhook.name?.trim().toLocaleLowerCase();
+      if (!webhook.id || !normalizedName || !webhook.url) throw new Error(`项目 ${project.name} 的 Webhook 格式无效`);
+      if (webhookIds.has(webhook.id)) throw new Error(`项目 ${project.name} 的 Webhook id 重复：${webhook.id}`);
+      if (webhookNames.has(normalizedName)) throw new Error(`项目 ${project.name} 的 Webhook 名称重复：${webhook.name}`);
+      validateWebhookUrl(webhook.url);
+      webhookIds.add(webhook.id);
+      webhookNames.add(normalizedName);
+    }
     const repoSlugs = new Set();
     for (const repo of project.repositories) {
       if (!repo.id || !repo.name || !repo.slug || !repo.path) throw new Error(`代码库格式无效：${project.name}`);
@@ -202,6 +217,7 @@ export function addProject(registry, { name, workspacePath } = {}) {
     name: trimmedName,
     slug,
     repositories: [],
+    webhooks: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -228,6 +244,60 @@ export function updateProject(registry, reference, { name } = {}) {
 export function findProject(registry, reference) {
   const normalized = toSlug(reference || '');
   return registry.projects.find((project) => project.id === reference || project.slug === normalized || project.name === reference);
+}
+
+export function findProjectWebhook(project, reference) {
+  const normalized = String(reference || '').trim();
+  return (project?.webhooks || []).find((webhook) => webhook.id === normalized || webhook.name === normalized) || null;
+}
+
+function projectWebhookInput(project, input, excludedId) {
+  const name = input.name?.trim();
+  if (!name) throw new Error('Webhook 名称不能为空');
+  const normalizedName = name.toLocaleLowerCase();
+  if ((project.webhooks || []).some((webhook) => (
+    webhook.id !== excludedId && webhook.name.trim().toLocaleLowerCase() === normalizedName
+  ))) {
+    throw new Error(`Webhook 名称已存在：${name}`);
+  }
+  return { name, url: validateWebhookUrl(input.url) };
+}
+
+export function addProjectWebhook(registry, projectReference, input = {}) {
+  const project = findProject(registry, projectReference);
+  if (!project) throw new Error(`找不到项目：${projectReference}`);
+  const values = projectWebhookInput(project, input);
+  const now = new Date().toISOString();
+  const webhook = { id: randomUUID(), ...values, createdAt: now, updatedAt: now };
+  project.webhooks ||= [];
+  project.webhooks.push(webhook);
+  project.updatedAt = now;
+  return webhook;
+}
+
+export function updateProjectWebhook(registry, projectReference, webhookReference, input = {}) {
+  const project = findProject(registry, projectReference);
+  if (!project) throw new Error(`找不到项目：${projectReference}`);
+  const webhook = findProjectWebhook(project, webhookReference);
+  if (!webhook) throw new Error('找不到 Webhook，请重新读取注册表');
+  const values = projectWebhookInput(project, {
+    name: input.name ?? webhook.name,
+    url: input.url ?? webhook.url,
+  }, webhook.id);
+  const now = new Date().toISOString();
+  Object.assign(webhook, values, { updatedAt: now });
+  project.updatedAt = now;
+  return webhook;
+}
+
+export function removeProjectWebhook(registry, projectReference, webhookReference) {
+  const project = findProject(registry, projectReference);
+  if (!project) throw new Error(`找不到项目：${projectReference}`);
+  const webhook = findProjectWebhook(project, webhookReference);
+  if (!webhook) throw new Error('找不到 Webhook，请重新读取注册表');
+  project.webhooks = (project.webhooks || []).filter((candidate) => candidate.id !== webhook.id);
+  project.updatedAt = new Date().toISOString();
+  return webhook;
 }
 
 export function findRepository(registry, reference) {

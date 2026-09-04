@@ -7,6 +7,10 @@ const registry = {
     id: 'local-project',
     name: 'Local Project',
     slug: 'local-project',
+    webhooks: [
+      { id: 'deploy-test', name: '发布测试服', url: 'https://ci.example.com/hooks/deploy-test', createdAt: now, updatedAt: now },
+      { id: 'rebuild-docs', name: '重新构建文档', url: 'https://ci.example.com/hooks/rebuild-docs', createdAt: now, updatedAt: now },
+    ],
     repositories: [
       { id: 'local-project-cli', name: 'local-project-cli', slug: 'local-project-cli', path: '/Users/demo/Projects/Local Project/local-project-cli', createdAt: now, updatedAt: now },
       { id: 'local-project-desktop', name: 'local-project-desktop', slug: 'local-project-desktop', path: '/Users/demo/Projects/Local Project/local-project-desktop', defaultOpenerId: 'vscode', createdAt: now, updatedAt: now },
@@ -18,6 +22,7 @@ const registry = {
     id: 'sample-workspace',
     name: 'Sample Workspace',
     slug: 'sample-workspace',
+    webhooks: [],
     repositories: [
       { id: 'sample-app', name: 'sample-app', slug: 'sample-app', path: '/Users/demo/Projects/Sample Workspace/sample-app', createdAt: now, updatedAt: now },
     ],
@@ -122,6 +127,32 @@ export const mockApi = {
     registry.projects = registry.projects.filter((project) => project.id !== id);
     return response();
   },
+  addProjectWebhook: async (projectId, input) => {
+    const project = registry.projects.find((item) => item.id === projectId);
+    const webhook = { id: crypto.randomUUID(), ...input, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    project.webhooks ||= [];
+    project.webhooks.push(webhook);
+    return response(webhook);
+  },
+  updateProjectWebhook: async (projectId, id, changes) => {
+    const project = registry.projects.find((item) => item.id === projectId);
+    Object.assign(project.webhooks.find((item) => item.id === id), changes, { updatedAt: new Date().toISOString() });
+    return response();
+  },
+  removeProjectWebhook: async (projectId, id) => {
+    const project = registry.projects.find((item) => item.id === projectId);
+    project.webhooks = (project.webhooks || []).filter((item) => item.id !== id);
+    return response();
+  },
+  triggerProjectWebhook: async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    contentType: 'application/json; charset=utf-8',
+    body: '{"success":true,"message":"Pipeline run created","pipelineRunId":1024}',
+    truncated: false,
+    durationMs: 86,
+  }),
   addRepository: async ({ projectId, name, path, ...rest }) => {
     const project = registry.projects.find((item) => item.id === projectId);
     const { openerId, ...repositoryFields } = rest;

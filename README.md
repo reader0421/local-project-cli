@@ -195,15 +195,17 @@ npm uninstall -g local-project-cli
 
 ## Desktop 桌面端
 
-LocalProject 提供项目、代码库、Git 状态、安全推送/拉取和 opener 管理界面。它不注册或覆盖全局 `project` 命令，只与 CLI 共享兼容的 `~/.local-project-cli/registry.json`。
+LocalProject 提供项目、代码库、Git 状态、安全推送/拉取、项目 Webhook 和 opener 管理界面。每个项目可以配置多个 Webhook，在项目栏中确认后以 JSON POST 触发测试服流水线，并展示服务端返回内容。它不注册或覆盖全局 `project` 命令，只与 CLI 共享兼容的 `~/.local-project-cli/registry.json`。
 
 仓库只公开 macOS Desktop 源码，不提供官方 Desktop 二进制 Release 或自动更新服务。可以在 `desktop/` 中直接运行开发版，也可以为自己的 Mac 生成本机安装包；具体命令见 [Desktop 源码运行与本机打包](docs/desktop-build.md)。
 
 ## 隐私与网络边界
 
-- 项目、代码库和 opener 配置只保存在本机注册表中，不上传到 LocalProject 服务。
+- 项目、代码库、Webhook 和 opener 配置只保存在本机注册表中，不上传到 LocalProject 服务。Webhook URL 可能包含访问 token，并以明文保存在 registry 中，请保护该文件及其备份。
 - 项目扫描只读取已登记目录的本地 Git 状态，不包含遥测或使用行为上报。
 - 只有用户主动执行获取远端状态、安全拉取或安全推送时，Git 才会访问代码库配置的远端。
+- 只有用户在确认弹窗中触发 Webhook 时，Desktop 才会向配置的地址发送 `Content-Type: application/json`、body 为 `{}` 的 HTTP POST。
+- 服务端有响应时，Desktop 会展示 HTTP 状态和响应体，由用户结合返回内容判断流水线是否成功接收；响应只保留在当前界面会话，不写入 registry。
 - opener 是本机可执行配置；只应添加自己安装或确认可信的应用与命令。
 
 ## 从源码开发

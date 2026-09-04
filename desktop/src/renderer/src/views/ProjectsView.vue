@@ -16,6 +16,9 @@ import {
   PhTrash as Trash,
   PhPencilSimple as PencilSimple,
   PhWrench as Wrench,
+  PhRocketLaunch as RocketLaunch,
+  PhPlay as Play,
+  PhWebhooksLogo as WebhooksLogo,
 } from '@phosphor-icons/vue';
 import BaseModal from '../components/BaseModal.vue';
 import { formatDate, middleEllipsis, pullEligibility, pushEligibility } from '../format.js';
@@ -39,6 +42,12 @@ const repositoryForm = ref({ name: '', path: '', openerId: '', openTarget: '' })
 const projectRenameForm = ref({ name: '' });
 const repositoryRenameForm = ref({ name: '' });
 const repositoryDefaultOpenerId = ref('');
+const webhookForm = ref({ id: '', name: '', url: '' });
+const pendingWebhook = ref(null);
+const webhookSaving = ref(false);
+const triggeringWebhookId = ref(null);
+const webhookResults = ref({});
+const webhookResult = ref(null);
 const expandedChanges = ref(false);
 const expandedCommits = ref(false);
 const expandedRemoteCommits = ref(false);
@@ -52,6 +61,10 @@ const defaultOpener = computed(() => {
   const id = selectedRepository.value?.defaultOpenerId || state.registry.settings.defaultOpenerId;
   return state.registry.openers.find((opener) => opener.id === id) || state.registry.openers[0];
 });
+const projectWebhooks = computed(() => selectedProject.value?.webhooks || []);
+const webhookFormReady = computed(() => (
+  webhookForm.value.name.trim() && /^https?:\/\//i.test(webhookForm.value.url.trim())
+));
 const pushEligibilityStatus = computed(() => pushEligibility(selectedStatus.value));
 const pullEligibilityStatus = computed(() => pullEligibility(selectedStatus.value));
 const visibleChanges = computed(() => {
@@ -76,6 +89,31 @@ function repositoryHealth(status) {
   if (status.kind === 'error' || status.dirty || status.behind > 0 || status.detached || status.operation) return 'danger';
   if (status.kind === 'non_git' || !status.upstream || status.ahead > 0) return 'warning';
   return 'healthy';
+}
+
+function webhookHost(webhook) {
+  try {
+    return new URL(webhook.url).host;
+  } catch {
+    return '地址格式无效';
+  }
+}
+
+function webhookMeta(webhook) {
+  if (triggeringWebhookId.value === webhook.id) return '正在发送请求…';
+  const result = webhookResults.value[webhook.id];
+  if (result) return `HTTP ${result.status} · 已返回`;
+  return webhookHost(webhook);
+}
+
+function formattedWebhookResponse(result) {
+  const body = result?.body || '';
+  if (!body.trim()) return '（响应体为空）';
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body;
+  }
 }
 const localGitStates = computed(() => {
   const status = selectedStatus.value;
@@ -128,6 +166,70 @@ async function addRepository() {
   modal.value = null;
   if (response?.result?.id) selectRepository(selectedProject.value.id, response.result.id);
   await startScan();
+}
+
+function openAddWebhook() {
+  webhookForm.value = { id: '', name: '', url: '' };
+  modal.value = 'webhook-form';
+}
+
+function openEditWebhook(webhook) {
+  webhookForm.value = { id: webhook.id, name: webhook.name, url: webhook.url };
+  modal.value = 'webhook-form';
+}
+
+async function saveProjectWebhook() {
+  webhookSaving.value = true;
+  try {
+    const input = { name: webhookForm.value.name, url: webhookForm.value.url };
+    if (webhookForm.value.id) {
+      await runAction(
+        () => api.updateProjectWebhook(selectedProject.value.id, webhookForm.value.id, input),
+        'Webhook 已更新',
+      );
+    } else {
+      await runAction(() => api.addProjectWebhook(selectedProject.value.id, input), 'Webhook 已添加');
+    }
+    modal.value = null;
+  } finally {
+    webhookSaving.value = false;
+  }
+}
+
+function openTriggerWebhook(webhook) {
+  pendingWebhook.value = webhook;
+  webhookResult.value = null;
+  modal.value = 'trigger-webhook';
+}
+
+async function triggerProjectWebhook() {
+  const webhook = pendingWebhook.value;
+  if (!webhook) return;
+  triggeringWebhookId.value = webhook.id;
+  try {
+    const result = await runAction(() => api.triggerProjectWebhook(selectedProject.value.id, webhook.id));
+    webhookResults.value = { ...webhookResults.value, [webhook.id]: result };
+    webhookResult.value = result;
+    modal.value = 'webhook-result';
+  } finally {
+    triggeringWebhookId.value = null;
+  }
+}
+
+function openRemoveWebhook() {
+  pendingWebhook.value = projectWebhooks.value.find((webhook) => webhook.id === webhookForm.value.id) || null;
+  modal.value = 'remove-webhook';
+}
+
+async function removeCurrentWebhook() {
+  const webhook = pendingWebhook.value;
+  if (!webhook) return;
+  await runAction(
+    () => api.removeProjectWebhook(selectedProject.value.id, webhook.id),
+    'Webhook 已移除',
+  );
+  delete webhookResults.value[webhook.id];
+  modal.value = null;
 }
 
 function openRenameProject() {
@@ -211,7 +313,7 @@ async function removeCurrentRepository() {
 }
 
 async function removeCurrentProject() {
-  await runAction(() => api.removeProject(selectedProject.value.id), '项目索引已移除，磁盘文件未改动');
+  await runAction(() => api.removeProject(selectedProject.value.id), '项目索引及 Webhook 配置已移除，磁盘文件未改动');
   modal.value = null;
   selectProject(projects.value[0]?.id || null);
   await startScan();
@@ -228,7 +330,7 @@ async function removeCurrentProject() {
       <div v-if="projects.length" class="project-list">
         <button v-for="project in projects" :key="project.id" :class="{ active: project.id === state.selectedProjectId }" @click="selectProject(project.id)">
           <span class="entity-initial project-initial">{{ nameInitial(project.name) }}</span>
-          <div><strong>{{ project.name }}</strong><small>{{ project.repositories.length }} 个代码库</small></div>
+          <div><strong>{{ project.name }}</strong><small>{{ project.repositories.length }} Repo · {{ project.webhooks?.length || 0 }} Webhook</small></div>
         </button>
       </div>
       <div v-else class="subtle-empty">还没有项目。</div>
@@ -241,24 +343,49 @@ async function removeCurrentProject() {
       </div>
 
       <div v-if="selectedProject" class="project-tree">
-        <div class="tree-section-heading">
-          <div><p class="eyebrow">REPOSITORIES</p><strong>代码库</strong></div>
-          <div class="tree-section-actions">
-            <span>{{ selectedProject.repositories.length }}</span>
-            <button class="inline-add-button" title="添加代码库" aria-label="添加代码库" @click="modal = 'add-repository'"><Plus :size="17" /></button>
+        <section class="project-resource-section repository-tree-section">
+          <div class="tree-section-heading">
+            <div><p class="eyebrow">REPOSITORIES</p><strong>代码库</strong></div>
+            <div class="tree-section-actions">
+              <span>{{ selectedProject.repositories.length }}</span>
+              <button class="inline-add-button" title="添加代码库" aria-label="添加代码库" @click="modal = 'add-repository'"><Plus :size="17" /></button>
+            </div>
           </div>
-        </div>
-        <button
-          v-for="repository in selectedProject.repositories"
-          :key="repository.id"
-          class="repository-tree-row"
-          :class="{ active: repository.id === state.selectedRepositoryId }"
-          @click="selectRepository(selectedProject.id, repository.id)"
-        >
-          <span class="entity-initial repository-initial">{{ nameInitial(repository.name) }}</span>
-          <div><strong>{{ repository.name }}</strong><small><GitBranch :size="13" />{{ state.statusByRepository[repository.id]?.branch || '正在获取…' }}</small></div>
-          <span class="repo-health" :class="repositoryHealth(state.statusByRepository[repository.id])" />
-        </button>
+          <div class="project-resource-list">
+            <button
+              v-for="repository in selectedProject.repositories"
+              :key="repository.id"
+              class="repository-tree-row"
+              :class="{ active: repository.id === state.selectedRepositoryId }"
+              @click="selectRepository(selectedProject.id, repository.id)"
+            >
+              <span class="entity-initial repository-initial">{{ nameInitial(repository.name) }}</span>
+              <div><strong>{{ repository.name }}</strong><small><GitBranch :size="13" />{{ state.statusByRepository[repository.id]?.branch || '正在获取…' }}</small></div>
+              <span class="repo-health" :class="repositoryHealth(state.statusByRepository[repository.id])" />
+            </button>
+            <p v-if="!selectedProject.repositories.length" class="resource-empty">还没有代码库</p>
+          </div>
+        </section>
+
+        <section class="project-resource-section webhook-tree-section">
+          <div class="tree-section-heading">
+            <div><p class="eyebrow">WEBHOOKS</p><strong>流水线</strong></div>
+            <div class="tree-section-actions">
+              <span>{{ projectWebhooks.length }}</span>
+              <button class="inline-add-button" title="添加 Webhook" aria-label="添加 Webhook" @click="openAddWebhook"><Plus :size="17" /></button>
+            </div>
+          </div>
+          <div class="project-resource-list webhook-list">
+            <div v-for="webhook in projectWebhooks" :key="webhook.id" class="webhook-tree-row">
+              <button class="webhook-trigger-button" :disabled="triggeringWebhookId === webhook.id" :title="`触发 ${webhook.name}`" @click="openTriggerWebhook(webhook)">
+                <RocketLaunch :size="18" />
+                <span><strong>{{ webhook.name }}</strong><small :title="webhook.url">{{ webhookMeta(webhook) }}</small></span>
+              </button>
+              <button class="webhook-edit-button" :disabled="triggeringWebhookId === webhook.id" :title="`编辑 ${webhook.name}`" :aria-label="`编辑 ${webhook.name}`" @click="openEditWebhook(webhook)"><PencilSimple :size="15" /></button>
+            </div>
+            <button v-if="!projectWebhooks.length" class="webhook-empty-button" @click="openAddWebhook"><WebhooksLogo :size="18" /><span>添加第一个 Webhook</span></button>
+          </div>
+        </section>
       </div>
 
     </aside>
@@ -330,8 +457,44 @@ async function removeCurrentProject() {
       <template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button primary" :disabled="!projectRenameForm.name.trim() || projectRenameForm.name.trim() === selectedProject?.name" @click="renameProject">保存</button></template>
     </BaseModal>
 
+    <BaseModal v-if="modal === 'webhook-form'" :title="webhookForm.id ? '编辑 Webhook' : '添加 Webhook'" :description="`关联到项目 ${selectedProject?.name}`" @close="modal = null">
+      <form class="form-stack" @submit.prevent="saveProjectWebhook">
+        <label>名称<input v-model="webhookForm.name" required autofocus placeholder="例如：发布测试服" /></label>
+        <label>地址<input v-model="webhookForm.url" type="url" required placeholder="https://ci.example.com/hooks/..." /><small>触发时发送 Content-Type: application/json、body 为 {} 的 HTTP POST。地址可能包含密钥，请妥善保护本机 registry 文件。</small></label>
+      </form>
+      <template #footer>
+        <button v-if="webhookForm.id" class="button danger" :disabled="webhookSaving" @click="openRemoveWebhook">删除</button>
+        <span class="modal-footer-spacer" />
+        <button class="button secondary" :disabled="webhookSaving" @click="modal = null">取消</button>
+        <button class="button primary" :disabled="!webhookFormReady || webhookSaving" @click="saveProjectWebhook">{{ webhookSaving ? '保存中…' : '保存' }}</button>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-if="modal === 'trigger-webhook'" title="确认触发流水线" :description="selectedProject?.name" @close="modal = null">
+      <div v-if="pendingWebhook" class="confirm-panel webhook-confirm-panel"><RocketLaunch :size="28" /><div><strong>{{ pendingWebhook.name }}</strong><p>将向 <code>{{ webhookHost(pendingWebhook) }}</code> 发送 JSON POST，请求体为 <code>{}</code>。完成后会展示 HTTP 状态和服务端返回内容。</p></div></div>
+      <template #footer><button class="button secondary" :disabled="triggeringWebhookId" @click="modal = null">取消</button><button class="button primary" :disabled="triggeringWebhookId" @click="triggerProjectWebhook"><Play :size="17" weight="fill" />{{ triggeringWebhookId ? '正在触发…' : '确认触发' }}</button></template>
+    </BaseModal>
+
+    <BaseModal v-if="modal === 'webhook-result'" title="Webhook 返回值" :description="pendingWebhook?.name" wide @close="modal = null">
+      <div v-if="webhookResult" class="webhook-response-panel">
+        <div class="webhook-response-summary">
+          <span class="webhook-http-status" :class="{ error: !webhookResult.ok }">HTTP {{ webhookResult.status }}{{ webhookResult.statusText ? ` ${webhookResult.statusText}` : '' }}</span>
+          <small>{{ webhookResult.durationMs }} ms<span v-if="webhookResult.contentType"> · {{ webhookResult.contentType }}</span></small>
+        </div>
+        <p class="webhook-response-note">HTTP 状态只表示请求层结果，请结合下面的返回内容判断流水线是否成功接收。</p>
+        <pre class="webhook-response-body">{{ formattedWebhookResponse(webhookResult) }}</pre>
+        <p v-if="webhookResult.truncated" class="webhook-response-truncated">响应内容超过 64 KiB，仅展示前 64 KiB。</p>
+      </div>
+      <template #footer><button class="button secondary" @click="modal = null">关闭</button><button class="button primary" @click="openTriggerWebhook(pendingWebhook)"><ArrowClockwise :size="17" />再次触发</button></template>
+    </BaseModal>
+
+    <BaseModal v-if="modal === 'remove-webhook'" title="移除 Webhook" description="只会删除本机配置，不会影响流水线系统。" @close="modal = null">
+      <div v-if="pendingWebhook" class="danger-summary"><strong>{{ pendingWebhook.name }}</strong><span>{{ webhookHost(pendingWebhook) }}</span></div>
+      <template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button danger" @click="removeCurrentWebhook">确认移除</button></template>
+    </BaseModal>
+
     <BaseModal v-if="modal === 'project-actions'" title="项目操作" :description="selectedProject?.name" @close="modal = null">
-      <div class="choice-list compact"><button @click="openRenameProject"><PencilSimple :size="20" /><div><strong>修改项目名称</strong><small>只修改索引中的显示名称</small></div></button><button class="danger-choice" @click="modal = 'remove-project'"><Trash :size="20" /><div><strong>移除项目索引</strong><small>同时移除项目内所有代码库索引，不会删除磁盘文件</small></div></button></div>
+      <div class="choice-list compact"><button @click="openRenameProject"><PencilSimple :size="20" /><div><strong>修改项目名称</strong><small>只修改索引中的显示名称</small></div></button><button class="danger-choice" @click="modal = 'remove-project'"><Trash :size="20" /><div><strong>移除项目索引</strong><small>同时移除代码库索引和 Webhook 配置，不会影响磁盘或流水线</small></div></button></div>
     </BaseModal>
 
     <BaseModal v-if="modal === 'rename-repository'" title="修改代码库名称" :description="selectedRepository?.path" @close="modal = null">
@@ -373,6 +536,6 @@ async function removeCurrentProject() {
     </BaseModal>
 
     <BaseModal v-if="modal === 'remove-repository'" title="移除代码库索引" description="这不会删除磁盘上的任何文件。" @close="modal = null"><div class="danger-summary"><strong>{{ selectedProject.name }}/{{ selectedRepository.name }}</strong><code>{{ selectedRepository.path }}</code></div><template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button danger" @click="removeCurrentRepository">确认移除</button></template></BaseModal>
-    <BaseModal v-if="modal === 'remove-project'" title="移除项目索引" description="项目内代码库只会从注册表移除，磁盘文件不会改变。" @close="modal = null"><div class="danger-summary"><strong>{{ selectedProject.name }}</strong><span>{{ selectedProject.repositories.length }} 个代码库</span></div><template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button danger" @click="removeCurrentProject">确认移除</button></template></BaseModal>
+    <BaseModal v-if="modal === 'remove-project'" title="移除项目索引" description="代码库索引和 Webhook 配置会从本机注册表移除；磁盘文件与流水线系统不会改变。" @close="modal = null"><div class="danger-summary"><strong>{{ selectedProject.name }}</strong><span>{{ selectedProject.repositories.length }} 个代码库 · {{ projectWebhooks.length }} 个 Webhook</span></div><template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button danger" @click="removeCurrentProject">确认移除</button></template></BaseModal>
   </div>
 </template>

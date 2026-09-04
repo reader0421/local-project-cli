@@ -149,7 +149,11 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .project-list button div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .project-list button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-list button small { color: var(--text-muted); }
-.project-tree { flex: 1; min-height: 0; padding: 8px; overflow: auto; }
+.project-tree { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 8px 0; overflow: hidden; }
+.project-resource-section { display: flex; flex-direction: column; min-height: 0; }
+.repository-tree-section { flex: 0 1 auto; min-height: 100px; max-height: 55%; }
+.webhook-tree-section { flex: 1 1 auto; min-height: 150px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.project-resource-list { min-height: 0; padding: 0 8px; overflow: auto; }
 .tree-section-heading { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 10px; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
 .tree-section-heading > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .tree-section-actions { display: flex; align-items: center; gap: 5px; }
@@ -163,6 +167,21 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .repository-tree-row.active { position: relative; background: #292929; }
 .repository-tree-row.active::before { content: ""; position: absolute; left: 0; width: 3px; height: 100%; border-radius: 3px 0 0 3px; background: var(--accent); }
 .repository-tree-row.active strong, .repository-tree-row.active small { color: var(--text); }
+.resource-empty { margin: 0; padding: 12px 8px; color: var(--text-muted); font-size: 12px; }
+.webhook-list { display: flex; flex-direction: column; gap: 4px; }
+.webhook-tree-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 3px; min-height: 54px; border-radius: 6px; }
+.webhook-tree-row:hover { background: var(--surface); }
+.webhook-trigger-button { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; min-height: 54px; padding: 7px 5px 7px 9px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.webhook-trigger-button > svg { color: var(--warning); }
+.webhook-trigger-button > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.webhook-trigger-button strong, .webhook-trigger-button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webhook-trigger-button small { color: var(--text-muted); }
+.webhook-trigger-button:disabled { opacity: .55; cursor: wait; }
+.webhook-edit-button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.webhook-edit-button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.webhook-edit-button:disabled { opacity: .45; cursor: wait; }
+.webhook-empty-button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; background: transparent; color: var(--text-muted); text-align: left; cursor: pointer; }
+.webhook-empty-button:hover { border-color: #666666; background: var(--surface); color: var(--text-secondary); }
 .repository-inspector { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .repository-inspector-scroll { flex: 1; min-height: 0; padding: 24px 26px 18px; overflow: auto; }
 .opener-detail { height: 100%; padding: 24px 26px 22px; overflow: auto; }
@@ -299,6 +318,7 @@ legend { margin-bottom: 8px; color: var(--text-secondary); }
 .modal-header p { margin: 0; color: var(--text-muted); line-height: 1.45; }
 .modal-body { max-height: 66vh; padding: 22px; overflow: auto; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: #151515; }
+.modal-footer-spacer { flex: 1; }
 .choice-list { display: flex; flex-direction: column; gap: 8px; }
 .choice-list button { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 6px; background: #202020; text-align: left; cursor: pointer; }
 .choice-list button:hover { border-color: #666666; background: var(--surface-hover); }
@@ -316,6 +336,15 @@ legend { margin-bottom: 8px; color: var(--text-secondary); }
 .confirm-panel { display: flex; align-items: flex-start; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #171717; }
 .confirm-panel svg { flex: 0 0 auto; color: var(--accent); }
 .confirm-panel p { margin: 7px 0 0; color: var(--text-secondary); line-height: 1.55; }
+.webhook-confirm-panel code { color: var(--accent); overflow-wrap: anywhere; }
+.webhook-response-panel { display: flex; flex-direction: column; gap: 12px; }
+.webhook-response-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.webhook-response-summary small { color: var(--text-muted); }
+.webhook-http-status { padding: 5px 9px; border: 1px solid #666666; border-radius: 6px; background: rgba(255, 255, 255, .07); color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-weight: 650; }
+.webhook-http-status.error { border-color: rgba(255, 107, 97, .42); background: rgba(255, 107, 97, .1); color: #ff9e96; }
+.webhook-response-note, .webhook-response-truncated { margin: 0; color: var(--text-secondary); line-height: 1.55; }
+.webhook-response-truncated { color: var(--warning); }
+.webhook-response-body { min-height: 112px; max-height: 320px; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: #111111; color: #dedede; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .danger-summary { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid rgba(255, 107, 97, .35); border-radius: 7px; background: rgba(81, 43, 42, .2); }
 .danger-summary code, .danger-summary span { color: var(--text-secondary); }
 

@@ -5,15 +5,19 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import {
   addProject,
+  addProjectWebhook,
   addRepository,
   findProject,
+  findProjectWebhook,
   findRepository,
   loadRegistry,
   removeProject,
+  removeProjectWebhook,
   removeRepository,
   resolveRegistryPath,
   saveRegistry,
   updateProject,
+  updateProjectWebhook,
   updateRepository,
 } from '../../../src/registry.js';
 import {
@@ -27,6 +31,7 @@ import {
 import { fetchRepository, getGitStatus, getPullEligibility, getPushEligibility, pullRepository, pushRepository } from '../../../src/git.js';
 import { scanRegistry } from '../../../src/scanner.js';
 import { SCHEMA_VERSION } from '../../../src/constants.js';
+import { triggerWebhook } from '../../../src/webhooks.js';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow;
@@ -89,6 +94,13 @@ function requireRepository(registry, repositoryId) {
   return found;
 }
 
+function requireProjectWebhook(registry, projectId, webhookId) {
+  const project = requireProject(registry, projectId);
+  const webhook = findProjectWebhook(project, webhookId);
+  if (!webhook) throw new Error('找不到 Webhook，请重新读取注册表');
+  return { project, webhook };
+}
+
 function sendScanProgress(payload) {
   if (!mainWindow?.isDestroyed()) mainWindow.webContents.send('scan:progress', payload);
 }
@@ -110,6 +122,20 @@ function registerIpc() {
   ipcMain.handle('project:add', (_event, input) => mutateRegistry((registry) => addProject(registry, input)));
   ipcMain.handle('project:update', (_event, { id, changes }) => mutateRegistry((registry) => updateProject(registry, id, changes)));
   ipcMain.handle('project:remove', (_event, projectId) => mutateRegistry((registry) => removeProject(registry, projectId)));
+  ipcMain.handle('project:webhook-add', (_event, { projectId, ...input }) => (
+    mutateRegistry((registry) => addProjectWebhook(registry, projectId, input))
+  ));
+  ipcMain.handle('project:webhook-update', (_event, { projectId, id, changes }) => (
+    mutateRegistry((registry) => updateProjectWebhook(registry, projectId, id, changes))
+  ));
+  ipcMain.handle('project:webhook-remove', (_event, { projectId, id }) => (
+    mutateRegistry((registry) => removeProjectWebhook(registry, projectId, id))
+  ));
+  ipcMain.handle('project:webhook-trigger', async (_event, { projectId, id }) => {
+    const { registry } = await snapshot();
+    const { webhook } = requireProjectWebhook(registry, projectId, id);
+    return triggerWebhook(webhook);
+  });
   ipcMain.handle('repository:add', (_event, { projectId, ...input }) => mutateRegistry(async (registry) => (
     addRepository(registry, requireProject(registry, projectId), input)
   )));

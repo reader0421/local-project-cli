@@ -11,6 +11,15 @@
       "name": "示例项目",
       "slug": "示例项目",
       "workspacePath": "/Users/example/code/demo.code-workspace",
+      "webhooks": [
+        {
+          "id": "uuid",
+          "name": "发布测试服",
+          "url": "https://ci.example.com/hooks/deploy?token=secret",
+          "createdAt": "2026-09-04T00:00:00.000Z",
+          "updatedAt": "2026-09-04T00:00:00.000Z"
+        }
+      ],
       "repositories": [
         {
           "id": "uuid",
@@ -45,6 +54,10 @@
 
 - `schemaVersion` 当前固定为 `1`。
 - `Project.slug` 全局唯一；`Repository.slug` 在所属项目内唯一。
+- `Project.webhooks` 可省略；存在时必须是数组，同一项目内 Webhook 名称（忽略大小写）和 id 分别唯一。
+- Webhook 地址只允许 `http` 或 `https`。Desktop 固定发送 `Content-Type: application/json`、body 为 `{}` 的 `POST` 请求，拒绝自动跟随重定向，并在 15 秒后超时。
+- 服务端返回 HTTP 响应时，无论是否为 2xx，Desktop 都会展示状态码和响应体；显示内容最多 64 KiB，不持久化到 registry。
+- Webhook URL 可能包含访问 token，注册表会原样明文保存；不要共享真实 registry 或将其提交到代码仓库。
 - 同一个规范化物理路径只能登记一次。
 - 非 Git 目录允许登记，JSON 结构与 Git 仓库相同。
 - `openers[].args` 中的 `{path}` 在执行时替换为仓库路径或 `openTarget`。
