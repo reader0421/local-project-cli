@@ -21,11 +21,13 @@ import {
   PhWebhooksLogo as WebhooksLogo,
 } from '@phosphor-icons/vue';
 import BaseModal from '../components/BaseModal.vue';
+import RepositoryCommands from '../components/RepositoryCommands.vue';
 import { formatDate, middleEllipsis, pullEligibility, pushEligibility } from '../format.js';
 import {
   api,
   projects,
   runAction,
+  refreshRepository,
   selectedProject,
   selectedRepository,
   selectedStatus,
@@ -36,6 +38,8 @@ import {
 } from '../store.js';
 
 const modal = ref(null);
+const repositoryCommands = ref(null);
+function manageCommands() { modal.value = null; repositoryCommands.value?.openManager(); }
 const busy = ref(false);
 const projectForm = ref({ name: '', workspacePath: '' });
 const repositoryForm = ref({ name: '', path: '', openerId: '', openTarget: '' });
@@ -278,8 +282,7 @@ async function openRepository(openerId) {
 async function fetchCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.fetchRepository(selectedRepository.value.id), '远端状态已更新', { title: '正在获取远端状态', detail: `${selectedRepository.value.name}：正在连接远端并获取最新提交。` });
-    await startScan();
+    await refreshRepository(selectedRepository.value.id, { fetch: true });
   } finally { busy.value = false; }
 }
 
@@ -395,8 +398,8 @@ async function removeCurrentProject() {
       <header class="inspector-header">
         <div class="repo-title"><Monitor :size="32" /><div><h1>{{ selectedRepository.name }}</h1><p>{{ selectedRepository.path }}</p></div></div>
         <div class="header-actions">
-          <button class="icon-button" title="刷新本地 Git 状态" aria-label="刷新本地 Git 状态" :disabled="state.scanning" @click="startScan()"><ArrowClockwise :size="18" :class="{ spin: state.scanning }" /></button>
-          <button class="icon-button" title="获取远端状态" aria-label="获取远端状态" :disabled="busy" @click="fetchCurrent"><CloudArrowDown :size="18" /></button>
+          <button class="icon-button" title="仅刷新当前代码库的本地 Git 状态" aria-label="刷新当前代码库" :disabled="state.scanning || busy" @click="refreshRepository(selectedRepository.id)"><ArrowClockwise :size="18" /></button>
+          <button class="icon-button" title="获取当前代码库的远端状态" aria-label="获取远端状态" :disabled="busy || state.scanning" @click="fetchCurrent"><CloudArrowDown :size="18" /></button>
           <button class="icon-button" title="复制代码库地址" aria-label="复制代码库地址" @click="copyCurrentPath"><Copy :size="18" /></button>
           <button class="icon-button" title="更多操作" aria-label="更多操作" @click="modal = 'more'"><DotsThree :size="22" /></button>
         </div>
@@ -439,6 +442,7 @@ async function removeCurrentProject() {
       </div>
 
       <footer class="inspector-actions">
+        <RepositoryCommands ref="repositoryCommands" :repository="selectedRepository" />
         <button class="button primary" :disabled="busy" @click="openRepository()"><Code :size="20" weight="fill" />使用 {{ defaultOpener?.name || '默认工具' }} 打开</button>
         <button class="button secondary" @click="modal = 'openers'"><Wrench :size="19" />选择其他工具</button>
         <button class="button secondary" @click="api.showRepository(selectedRepository.id)"><FolderOpen :size="19" />在 Finder 中显示</button>
@@ -532,7 +536,7 @@ async function removeCurrentProject() {
     </BaseModal>
 
     <BaseModal v-if="modal === 'more'" title="代码库操作" @close="modal = null">
-      <div class="choice-list compact"><button @click="openRepositoryDefaultOpener"><Wrench :size="20" /><div><strong>设置默认打开工具</strong><small>{{ selectedRepository.defaultOpenerId ? `当前为 ${defaultOpener?.name}` : `跟随全局默认：${defaultOpener?.name}` }}</small></div></button><button @click="openRenameRepository"><PencilSimple :size="20" /><div><strong>修改代码库名称</strong><small>只修改索引中的显示名称</small></div></button><button class="danger-choice" @click="modal = 'remove-repository'"><Trash :size="20" /><div><strong>从索引移除代码库</strong><small>不会删除磁盘文件</small></div></button></div>
+      <div class="choice-list compact"><button @click="manageCommands"><Code :size="20" /><div><strong>自定义命令管理</strong><small>新增、编辑或删除当前代码库的命令</small></div></button><button @click="openRepositoryDefaultOpener"><Wrench :size="20" /><div><strong>设置默认打开工具</strong><small>{{ selectedRepository.defaultOpenerId ? `当前为 ${defaultOpener?.name}` : `跟随全局默认：${defaultOpener?.name}` }}</small></div></button><button @click="openRenameRepository"><PencilSimple :size="20" /><div><strong>修改代码库名称</strong><small>只修改索引中的显示名称</small></div></button><button class="danger-choice" @click="modal = 'remove-repository'"><Trash :size="20" /><div><strong>从索引移除代码库</strong><small>不会删除磁盘文件</small></div></button></div>
     </BaseModal>
 
     <BaseModal v-if="modal === 'remove-repository'" title="移除代码库索引" description="这不会删除磁盘上的任何文件。" @close="modal = null"><div class="danger-summary"><strong>{{ selectedProject.name }}/{{ selectedRepository.name }}</strong><code>{{ selectedRepository.path }}</code></div><template #footer><button class="button secondary" @click="modal = null">取消</button><button class="button danger" @click="removeCurrentRepository">确认移除</button></template></BaseModal>

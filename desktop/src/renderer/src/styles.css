@@ -488,3 +488,21 @@ legend { margin-bottom: 8px; color: var(--text-secondary); }
 .scan-failures { position: absolute; z-index: 10; top: calc(var(--titlebar) + 8px); right: 16px; max-width: min(600px, 75vw); max-height: 220px; overflow: auto; padding: 12px 16px; border: 1px solid var(--danger-border); border-radius: 8px; background: var(--danger-bg); color: var(--danger-text); box-shadow: var(--button-shadow); }
 .scan-failures summary { cursor: pointer; font-weight: 600; }
 .scan-failures p { overflow-wrap: anywhere; }
+
+.inspector-actions { height: auto; min-height: var(--footer-height); flex: 0 0 auto; flex-wrap: wrap; }
+.inspector-actions .button, .inspector-actions .button.primary { flex: 0 1 auto; width: auto; }
+.repository-command-menu { position: relative; }
+.repository-command-menu summary { list-style: none; }
+.repository-command-menu summary::-webkit-details-marker { display: none; }
+.command-dropdown { position: absolute; bottom: calc(100% + 10px); left: 0; width: min(360px, 80vw); padding: 6px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--modal-bg); box-shadow: 0 8px 30px rgba(0, 0, 0, .18); }
+.command-dropdown button { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; width: 100%; padding: 10px; border: 0; border-radius: 5px; background: transparent; text-align: left; cursor: pointer; }
+.command-dropdown button:hover { background: var(--surface-hover); }
+.command-dropdown .command-add { flex-direction: row; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.command-dropdown-list { max-height: 240px; overflow: auto; }
+.command-dropdown p, .command-dropdown > small { display: block; margin: 8px; color: var(--text-muted); }
+.command-dropdown code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 12px; }
+.command-management-list { margin-top: 16px; }
+.command-management-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.command-management-row > div { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
+.command-management-row code { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.command-management-row .icon-button { flex: 0 0 30px; }

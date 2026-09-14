@@ -78,6 +78,22 @@ export async function runAction(action, successMessage, operation) {
   }
 }
 
+export async function refreshRepository(repositoryId, { fetch = false } = {}) {
+  if (interactionBlocked.value || state.scanning) return null;
+  const item = repositories.value.find(({ repository }) => repository.id === repositoryId);
+  if (!item) return null;
+  const status = await runAction(
+    () => fetch ? api.fetchRepository(repositoryId) : api.getRepositoryStatus(repositoryId),
+    fetch ? '当前代码库的远端状态已更新' : '当前代码库的本地状态已刷新',
+    {
+      title: fetch ? '正在获取当前代码库的远端状态' : '正在刷新当前代码库',
+      detail: `${item.project.name}/${item.repository.name}：${fetch ? '正在获取最新远端提交并更新差异。' : '正在读取本地 Git 状态。'}`,
+    },
+  );
+  state.statusByRepository[repositoryId] = status;
+  return status;
+}
+
 export async function startScan({ fetch = false, background = false } = {}) {
   if (state.scanning) return null;
   state.scanning = true;

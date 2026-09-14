@@ -91,3 +91,31 @@ it('操作全程保留 loading，阻止重复执行，失败后解除遮罩并�
     expect(store.state.notice.message).toBe('网络失败');
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });
+
+it('详情页刷新只更新指定代码库，fetch 不触发全量扫描，失败保留原状态', async () => {
+  vi.resetModules();
+  const local = { kind: 'git', ahead: 1, behind: 0 };
+  const remote = { kind: 'git', ahead: 1, behind: 2 };
+  const getRepositoryStatus = vi.fn(async () => local);
+  const fetchRepository = vi.fn(async () => remote);
+  const startScan = vi.fn();
+  vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: { getRepositoryStatus, fetchRepository, startScan } });
+  try {
+    const store = await import('./store.js');
+    store.state.registry.projects = [{ id: 'p', name: '项目', repositories: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }];
+    store.state.statusByRepository.b = { kind: 'git', ahead: 5 };
+    await store.refreshRepository('a');
+    expect(getRepositoryStatus).toHaveBeenCalledExactlyOnceWith('a');
+    expect(store.state.statusByRepository.a).toEqual(local);
+    await store.refreshRepository('a', { fetch: true });
+    expect(fetchRepository).toHaveBeenCalledExactlyOnceWith('a');
+    expect(store.state.statusByRepository.a).toEqual(remote);
+    expect(store.state.statusByRepository.b).toEqual({ kind: 'git', ahead: 5 });
+    expect(startScan).not.toHaveBeenCalled();
+    expect(store.state.lastScanCompletedAt).toBeNull();
+    getRepositoryStatus.mockRejectedValueOnce(new Error('读取失败'));
+    await expect(store.refreshRepository('a')).rejects.toThrow('读取失败');
+    expect(store.state.statusByRepository.a).toEqual(remote);
+    expect(store.state.operation).toBeNull();
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});

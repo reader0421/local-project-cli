@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const api = {
+  setDefaultTerminal: (id) => ipcRenderer.invoke('terminal:default', id),
+  saveRepositoryCommand: (repositoryId, input, id) => ipcRenderer.invoke('repository:command-save', { repositoryId, input, id }),
+  removeRepositoryCommand: (repositoryId, id) => ipcRenderer.invoke('repository:command-remove', { repositoryId, id }),
+  runRepositoryCommand: (repositoryId, id) => ipcRenderer.invoke('repository:command-run', { repositoryId, id }),
   getState: () => ipcRenderer.invoke('state:get'),
   startScan: (options) => ipcRenderer.invoke('scan:start', options),
   onScanProgress: (listener) => {
@@ -25,6 +29,7 @@ const api = {
   openRepository: (repositoryId, openerId) => ipcRenderer.invoke('repository:open', { repositoryId, openerId }),
   showRepository: (id) => ipcRenderer.invoke('repository:show', id),
   copyRepositoryPath: (id) => ipcRenderer.invoke('repository:copy-path', id),
+  getRepositoryStatus: (id) => ipcRenderer.invoke('repository:status', id),
   fetchRepository: (id) => ipcRenderer.invoke('repository:fetch', id),
   pushRepository: (id) => ipcRenderer.invoke('repository:push', id),
   pullRepository: (id) => ipcRenderer.invoke('repository:pull', id),

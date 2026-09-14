@@ -94,7 +94,29 @@ function response(result = null) {
   return { result, registry: structuredClone(registry), registryPath: '/Users/demo/.local-project-cli/registry.json', schemaVersion: 1, desktopVersion: '0.1.1', platform: 'darwin' };
 }
 
+function mockCommandRepository(id) {
+  const repository = registry.projects.flatMap((project) => project.repositories).find((item) => item.id === id);
+  if (!repository) throw new Error('找不到代码库');
+  return repository;
+}
+
 export const mockApi = {
+  setDefaultTerminal: async (id) => { registry.settings.defaultTerminalId = id; return response(); },
+  saveRepositoryCommand: async (repositoryId, input, id) => {
+    const repository = mockCommandRepository(repositoryId);
+    repository.commands ||= [];
+    if (repository.commands.some((item) => item.id !== id && item.name.toLowerCase() === input.name.trim().toLowerCase())) throw new Error('命令名称已存在');
+    const item = { id: id || crypto.randomUUID(), name: input.name.trim(), command: input.command.trim() };
+    if (id) repository.commands = repository.commands.map((command) => command.id === id ? item : command);
+    else repository.commands.push(item);
+    return response(item);
+  },
+  removeRepositoryCommand: async (repositoryId, id) => {
+    const repository = mockCommandRepository(repositoryId);
+    repository.commands = (repository.commands || []).filter((item) => item.id !== id);
+    return response();
+  },
+  runRepositoryCommand: async () => { throw new Error('浏览器预览不启动本机终端，请在桌面应用中运行'); },
   getState: async () => response(),
   startScan: async () => {
     const resultEntries = entries();
@@ -190,7 +212,8 @@ export const mockApi = {
   openRepository: async (_id, openerId) => response({ openerId: openerId || 'vscode', openerName: 'Visual Studio Code' }),
   showRepository: async () => true,
   copyRepositoryPath: async () => '/Users/demo/Projects/Local Project/local-project-desktop',
-  fetchRepository: async () => true,
+  getRepositoryStatus: async (id) => entries().flatMap((entry) => entry.repositories).find((item) => item.repository.id === id)?.status,
+  fetchRepository: async (id) => entries().flatMap((entry) => entry.repositories).find((item) => item.repository.id === id)?.status,
   pushRepository: async () => true,
   pullRepository: async () => true,
   chooseDirectory: async () => '/Users/demo/Projects/new-repository',

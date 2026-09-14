@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import {
   PhDatabase as Database,
   PhCopy as Copy,
@@ -12,6 +12,14 @@ import {
 } from '@phosphor-icons/vue';
 import { api, runAction, startScan, state } from '../store.js';
 import { themePreference, resolvedTheme, themeError, setThemePreference } from '../theme.js';
+
+const terminalSaving = ref(false);
+async function changeTerminal(event) {
+  terminalSaving.value = true;
+  try { await runAction(() => api.setDefaultTerminal(event.target.value), '默认终端已修改'); }
+  catch { event.target.value = state.registry.settings.defaultTerminalId || 'terminal'; }
+  finally { terminalSaving.value = false; }
+}
 
 const defaultOpener = computed(() => state.registry.openers.find((item) => item.id === state.registry.settings.defaultOpenerId));
 
@@ -56,6 +64,11 @@ async function changeDefault(event) {
         <div class="setting-row"><div><span>自定义注册表</span><p>切换前会验证目标 JSON；失败时保留当前配置。</p></div><button class="button secondary" @click="chooseRegistry">选择文件</button></div>
         <div class="setting-row"><div><span>重新读取</span><p>获取 CLI 或其他 Desktop 实例写入的最新内容。</p></div><button class="button secondary" @click="startScan()"><ArrowClockwise :size="17" />重新读取</button></div>
       </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-title"><Wrench :size="24" /><div><h2>默认终端</h2><p>所有代码库的自定义命令都使用此终端，在代码库根目录执行。</p></div></div>
+      <div class="settings-card"><div class="setting-row"><div><label for="default-terminal">运行命令的终端</label><p>命令输出保留在终端中；Ghostty 需要预先安装。</p></div><select id="default-terminal" :value="state.registry.settings.defaultTerminalId || 'terminal'" :disabled="terminalSaving" @change="changeTerminal"><option value="terminal">Terminal（macOS 自带）</option><option value="ghostty">Ghostty</option></select></div></div>
     </section>
 
     <section class="settings-section">

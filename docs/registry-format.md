@@ -81,3 +81,26 @@ project opener remove <id>
 ```
 
 全局默认 opener 或仍被 `Repository.defaultOpenerId` 引用的 opener 不能删除。
+
+## 代码库自定义命令
+
+`Repository.commands` 是可选数组；旧注册表不需要迁移。每项包含 `id`、`name`、`command`，名称在同一代码库内唯一（忽略大小写）。例如：
+
+```json
+"commands": [
+  { "id": "uuid", "name": "启动开发服务", "command": "pnpm dev" },
+  { "id": "uuid-2", "name": "构建项目", "command": "pnpm build" }
+]
+```
+
+Desktop 详情页底部“运行命令”菜单可新增并执行命令；右上角“更多操作 → 自定义命令管理”可新增、编辑和删除。
+
+`settings.defaultTerminalId` 可选 `terminal` 或 `ghostty`，缺失时使用 macOS 自带 Terminal。在全局设置中修改后对所有代码库生效，不影响已有 opener 定义。
+
+运行时主进程按照代码库 ID 和命令 ID 重新读取注册表，在 `Repository.path` 根目录执行（不使用 `openTarget`）。通过登录交互 shell 加载终端环境，命令结束后显示退出码并保留交互窗口。支持 macOS 常见的 zsh/bash；其它 shell 回退到 `/bin/zsh`。Ghostty 需预先安装；Terminal 首次启动可能需要允许系统自动化权限。
+
+应用的“已交给终端”只代表终端启动请求成功，不代表命令执行成功。输出、退出码及常驻开发服务均在终端中查看和控制；浏览器预览不会真正执行命令。
+
+### Ghostty 多标签修正
+
+Ghostty 的 macOS 启动改用单个 `--initial-command=shell:…` 配置参数传递完整命令，不再把 `/bin/zsh` 和代码库目录作为裸路径参数放在 `-e` 后面，避免被应用当作文件额外打开。路径及命令仍分别经过 shell 参数引用。回归测试覆盖含中文、空格、单引号及 `$` 的目录；配置格式依据本机 Ghostty 1.3.1 文档；配置检查工具出现 SentryInitFailed，未作为通过证据。安装后的标签数量需要重新验收。

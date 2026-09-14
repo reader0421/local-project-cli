@@ -32,6 +32,8 @@ import { fetchRepository, getGitStatus, getPullEligibility, getPushEligibility, 
 import { scanRegistry } from '../../../src/scanner.js';
 import { SCHEMA_VERSION } from '../../../src/constants.js';
 import { triggerWebhook } from '../../../src/webhooks.js';
+import { findRepositoryCommand, saveRepositoryCommand, removeRepositoryCommand, validateTerminal } from '../../../src/repository-commands.js';
+import { runInTerminal } from './command-terminal.js';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow;
@@ -106,6 +108,27 @@ function sendScanProgress(payload) {
 }
 
 function registerIpc() {
+  ipcMain.handle('terminal:default', (_event, id) => mutateRegistry((registry) => {
+    registry.settings.defaultTerminalId = validateTerminal(id);
+  }));
+  ipcMain.handle('repository:command-save', (_event, { repositoryId, id, input }) => mutateRegistry((registry) => {
+    const { project, repository } = requireRepository(registry, repositoryId);
+    const command = saveRepositoryCommand(repository, input, id);
+    project.updatedAt = repository.updatedAt;
+    return command;
+  }));
+  ipcMain.handle('repository:command-remove', (_event, { repositoryId, id }) => mutateRegistry((registry) => {
+    const { project, repository } = requireRepository(registry, repositoryId);
+    const command = removeRepositoryCommand(repository, id);
+    project.updatedAt = repository.updatedAt;
+    return command;
+  }));
+  ipcMain.handle('repository:command-run', async (_event, { repositoryId, id }) => {
+    const { registry } = await snapshot();
+    const { repository } = requireRepository(registry, repositoryId);
+    const command = findRepositoryCommand(repository, id);
+    return runInTerminal(registry.settings.defaultTerminalId || 'terminal', repository.path, command.command);
+  });
   ipcMain.handle('state:get', () => snapshot());
   ipcMain.handle('scan:start', async (_event, { fetch = false } = {}) => {
     const sequence = ++scanSequence;
@@ -165,6 +188,11 @@ function registerIpc() {
     const { repository } = requireRepository(registry, repositoryId);
     clipboard.writeText(repository.path);
     return repository.path;
+  });
+  ipcMain.handle('repository:status', async (_event, repositoryId) => {
+    const { registry } = await snapshot();
+    const { repository } = requireRepository(registry, repositoryId);
+    return getGitStatus(repository.path);
   });
   ipcMain.handle('repository:fetch', async (_event, repositoryId) => {
     const { registry } = await snapshot();

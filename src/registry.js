@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { createEmptyRegistry, SCHEMA_VERSION } from './constants.js';
 import { validateWebhookUrl } from './webhooks.js';
+import { validateRepositoryCommands, validateTerminal } from './repository-commands.js';
 
 const registryRevisions = new WeakMap();
 const LOCK_RETRY_COUNT = 40;
@@ -145,6 +146,7 @@ export function validateRegistry(registry) {
   if (!Array.isArray(registry.projects)) throw new Error('projects 必须是数组');
   if (!Array.isArray(registry.openers)) throw new Error('openers 必须是数组');
   if (!registry.settings || typeof registry.settings !== 'object') throw new Error('settings 必须是对象');
+  if (registry.settings.defaultTerminalId !== undefined) validateTerminal(registry.settings.defaultTerminalId);
 
   const projectIds = new Set();
   const projectSlugs = new Set();
@@ -173,6 +175,7 @@ export function validateRegistry(registry) {
     const repoSlugs = new Set();
     for (const repo of project.repositories) {
       if (!repo.id || !repo.name || !repo.slug || !repo.path) throw new Error(`代码库格式无效：${project.name}`);
+      validateRepositoryCommands(repo.commands);
       if (repoSlugs.has(repo.slug)) throw new Error(`项目 ${project.name} 中代码库名称重复：${repo.name}`);
       if (physicalPaths.has(repo.path)) throw new Error(`代码库路径重复：${repo.path}`);
       repoSlugs.add(repo.slug);
