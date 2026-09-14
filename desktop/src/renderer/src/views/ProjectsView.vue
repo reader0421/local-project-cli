@@ -207,7 +207,7 @@ async function triggerProjectWebhook() {
   if (!webhook) return;
   triggeringWebhookId.value = webhook.id;
   try {
-    const result = await runAction(() => api.triggerProjectWebhook(selectedProject.value.id, webhook.id));
+    const result = await runAction(() => api.triggerProjectWebhook(selectedProject.value.id, webhook.id), null, { title: '正在运行 Webhook', detail: `${selectedProject.value.name} / ${webhook.name}：请求已发起，正在等待服务端响应。` });
     webhookResults.value = { ...webhookResults.value, [webhook.id]: result };
     webhookResult.value = result;
     modal.value = 'webhook-result';
@@ -278,7 +278,7 @@ async function openRepository(openerId) {
 async function fetchCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.fetchRepository(selectedRepository.value.id), '远端状态已更新');
+    await runAction(() => api.fetchRepository(selectedRepository.value.id), '远端状态已更新', { title: '正在获取远端状态', detail: `${selectedRepository.value.name}：正在连接远端并获取最新提交。` });
     await startScan();
   } finally { busy.value = false; }
 }
@@ -290,7 +290,7 @@ async function copyCurrentPath() {
 async function pushCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.pushRepository(selectedRepository.value.id), '推送完成');
+    await runAction(() => api.pushRepository(selectedRepository.value.id), '推送完成', { title: '正在推送提交', detail: `${selectedRepository.value.name}：正在将本地提交上传到远端仓库。` });
     modal.value = null;
     await startScan();
   } finally { busy.value = false; }
@@ -299,7 +299,7 @@ async function pushCurrent() {
 async function pullCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.pullRepository(selectedRepository.value.id), '安全拉取完成');
+    await runAction(() => api.pullRepository(selectedRepository.value.id), '安全拉取完成', { title: '正在安全拉取', detail: `${selectedRepository.value.name}：正在获取远端、校验状态并拉取提交。` });
     modal.value = null;
     await startScan();
   } finally { busy.value = false; }

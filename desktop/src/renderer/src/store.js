@@ -18,7 +18,20 @@ export const state = reactive({
   scanProgress: { completed: 0, total: 0 },
   lastScanCompletedAt: null,
   notice: null,
+  operation: null,
+  scanFetch: false,
+  scanBlocking: false,
+  scanStartedAt: null,
+  scanFailures: [],
 });
+
+export const interactionBlocked = computed(() => Boolean(state.operation || (state.scanning && state.scanBlocking)));
+
+export async function withOperation(title, detail, action) {
+  if (state.operation) return;
+  state.operation = { title, detail, startedAt: Date.now(), completed: null, total: null };
+  try { return await action(); } finally { state.operation = null; }
+}
 
 export const projects = computed(() => state.registry.projects || []);
 export const selectedProject = computed(() => projects.value.find((project) => project.id === state.selectedProjectId) || null);
@@ -50,9 +63,11 @@ export function setNotice(kind, message) {
   }, 4200);
 }
 
-export async function runAction(action, successMessage) {
+export async function runAction(action, successMessage, operation) {
   try {
-    const result = await action();
+    const result = operation
+      ? await withOperation(operation.title, operation.detail, action)
+      : await action();
     if (result?.registry) applySnapshot(result);
     if (successMessage) setNotice('success', successMessage);
     return result;
@@ -63,17 +78,29 @@ export async function runAction(action, successMessage) {
   }
 }
 
-export async function startScan({ fetch = false } = {}) {
+export async function startScan({ fetch = false, background = false } = {}) {
   if (state.scanning) return null;
   state.scanning = true;
+  state.scanFetch = fetch;
+  state.scanBlocking = !background;
+  state.scanStartedAt = Date.now();
+  state.scanFailures = [];
   state.scanProgress = { completed: 0, total: repositories.value.length };
   try {
     const result = await api.startScan({ fetch });
     for (const entry of result.entries) {
-      for (const item of entry.repositories) state.statusByRepository[item.repository.id] = item.status;
+      for (const item of entry.repositories) {
+        state.statusByRepository[item.repository.id] = item.status;
+        if (item.status.fetchError || item.status.kind === 'error') {
+          state.scanFailures.push({ name: `${entry.project.name}/${item.repository.name}`, message: item.status.fetchError || item.status.error });
+        }
+      }
     }
     state.scanProgress = { completed: repositories.value.length, total: repositories.value.length };
     state.lastScanCompletedAt = new Date().toISOString();
+    if (!background) setNotice(state.scanFailures.length ? 'error' : 'success', state.scanFailures.length
+      ? `${state.scanFailures.length} 个代码库未能完整刷新，请查看失败详情`
+      : (fetch ? '已获取远端状态，本地与远端差异已更新' : '本地 Git 状态已刷新'));
     return result;
   } catch (error) {
     setNotice('error', `Git 状态读取失败：${error.message}`);
@@ -92,7 +119,7 @@ export async function initialize() {
     applySnapshot(await api.getState());
     state.ready = true;
     state.loading = false;
-    await startScan();
+    await startScan({ background: true });
   } catch (error) {
     setNotice('error', `启动失败：${error.message}`);
   } finally {

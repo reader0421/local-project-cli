@@ -35,8 +35,9 @@ export async function scanRegistry(registry, {
   let completed = 0;
   onProgress?.({ completed, total: tasks.length });
   await runWithConcurrency(tasks, concurrency, async ({ projectIndex, repositoryIndex, repository }) => {
+    let fetchError;
     if (fetch) {
-      try { await fetchStatus(repository.path); } catch { /* retain local status */ }
+      try { await fetchStatus(repository.path); } catch (error) { fetchError = String(error.message || error); }
     }
     let status;
     try {
@@ -44,6 +45,7 @@ export async function scanRegistry(registry, {
     } catch (error) {
       status = { kind: 'error', path: repository.path, error: error.message };
     }
+    if (fetchError) status = { ...status, fetchError };
     results[projectIndex].repositories[repositoryIndex] = { repository, status };
     completed += 1;
     onProgress?.({

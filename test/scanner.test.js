@@ -55,3 +55,22 @@ test('registry scan isolates Git failures to the affected repository', async () 
   });
   assert.equal(entries[0].repositories[1].status.kind, 'non_git');
 });
+
+test('fetch completes before comparison and its failure remains visible alongside cached local status', async () => {
+  const fetched = new Set();
+  const entries = await scanRegistry(registryWithRepositories(2), {
+    fetch: true,
+    async fetchStatus(path) {
+      fetched.add(path);
+      if (path.endsWith('/0')) throw new Error('remote unavailable');
+    },
+    async getStatus(path) {
+      assert.ok(fetched.has(path));
+      return { kind: 'git', ahead: 1, behind: 2 };
+    },
+  });
+  assert.equal(entries[0].repositories[0].status.fetchError, 'remote unavailable');
+  assert.equal(entries[0].repositories[0].status.ahead, 1);
+  assert.equal(entries[0].repositories[1].status.behind, 2);
+  assert.equal(entries[0].repositories[1].status.fetchError, undefined);
+});

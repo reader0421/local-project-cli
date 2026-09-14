@@ -8,8 +8,10 @@ import {
   PhWrench as Wrench,
   PhInfo as Info,
   PhGithubLogo as GithubLogo,
+  PhSun as Sun,
 } from '@phosphor-icons/vue';
 import { api, runAction, startScan, state } from '../store.js';
+import { themePreference, resolvedTheme, themeError, setThemePreference } from '../theme.js';
 
 const defaultOpener = computed(() => state.registry.openers.find((item) => item.id === state.registry.settings.defaultOpenerId));
 
@@ -30,6 +32,21 @@ async function changeDefault(event) {
 <template>
   <div class="page settings-page">
     <header class="page-header"><div><p class="eyebrow">PREFERENCES</p><h1>设置</h1><p>Desktop 和 npm CLI 独立更新，只共享兼容的注册表数据。</p></div></header>
+
+    <section class="settings-section">
+      <div class="settings-title"><Sun :size="24" /><div><h2>外观</h2><p>选择白天、夜间，或随系统自动切换。</p></div></div>
+      <div class="settings-card">
+        <div class="setting-row">
+          <div><label for="theme-mode">显示模式</label><p>{{ themePreference === 'system' ? '跟随系统，当前为' : '当前为' }}{{ resolvedTheme === 'light' ? '白天' : '夜间' }}模式，选择会自动保存。</p></div>
+          <select id="theme-mode" :value="themePreference" @change="setThemePreference($event.target.value)">
+            <option value="system">跟随系统</option>
+            <option value="light">白天模式</option>
+            <option value="dark">夜间模式</option>
+          </select>
+        </div>
+      </div>
+      <p v-if="themeError" role="alert" class="form-error">{{ themeError }}</p>
+    </section>
 
     <section class="settings-section">
       <div class="settings-title"><Database :size="24" /><div><h2>注册表</h2><p>项目、代码库和 opener 的唯一持久化文件。</p></div></div>

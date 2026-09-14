@@ -11,7 +11,7 @@ import {
 } from '@phosphor-icons/vue';
 import BaseModal from '../components/BaseModal.vue';
 import { pushEligibility } from '../format.js';
-import { api, repositories, runAction, selectRepository, startScan } from '../store.js';
+import { api, repositories, runAction, selectRepository, startScan, state, withOperation } from '../store.js';
 
 const modal = ref(null);
 const busy = ref(false);
@@ -25,7 +25,7 @@ function confirmOne(item) { selected.value = item; modal.value = 'single'; }
 async function pushOne(item) {
   busy.value = true;
   try {
-    await runAction(() => api.pushRepository(item.repository.id), `已推送 ${item.project.name}/${item.repository.name}`);
+    await runAction(() => api.pushRepository(item.repository.id), `已推送 ${item.project.name}/${item.repository.name}`, { title: '正在推送提交', detail: `${item.project.name}/${item.repository.name}：正在上传本地提交。` });
     modal.value = null;
     await startScan();
   } finally { busy.value = false; }
@@ -34,15 +34,23 @@ async function pushOne(item) {
 async function pushAll() {
   busy.value = true;
   results.value = [];
-  for (const item of pushable.value) {
-    try {
-      await api.pushRepository(item.repository.id);
-      results.value.push({ item, success: true });
-    } catch (error) {
-      results.value.push({ item, success: false, message: error.message });
-    }
-  }
-  busy.value = false;
+  const items = [...pushable.value];
+  try {
+    await withOperation('正在批量推送', '正在准备代码库…', async () => {
+      state.operation.total = items.length;
+      state.operation.completed = 0;
+      for (const item of items) {
+        state.operation.detail = `正在推送 ${item.project.name}/${item.repository.name}`;
+        try {
+          await api.pushRepository(item.repository.id);
+          results.value.push({ item, success: true });
+        } catch (error) {
+          results.value.push({ item, success: false, message: error.message });
+        }
+        state.operation.completed += 1;
+      }
+    });
+  } finally { busy.value = false; }
   modal.value = 'results';
   await startScan();
 }

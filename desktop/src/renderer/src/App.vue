@@ -11,7 +11,8 @@ import {
   PhArrowClockwise as ArrowClockwise,
   PhWarningCircle as WarningCircle,
 } from '@phosphor-icons/vue';
-import { initialize, startScan, state, unpushedRepositories } from './store.js';
+import { initialize, interactionBlocked, startScan, state, unpushedRepositories } from './store.js';
+import OperationProgress from './components/OperationProgress.vue';
 import OverviewView from './views/OverviewView.vue';
 import ProjectsView from './views/ProjectsView.vue';
 import PendingView from './views/PendingView.vue';
@@ -51,23 +52,23 @@ const lastScanLabel = computed(() => {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" :inert="interactionBlocked">
     <header class="titlebar">
       <div class="titlebar-drag" />
       <strong>LocalProject</strong>
       <div class="scan-indicator" :class="{ active: state.scanning }">
         <CircleNotch v-if="state.scanning" :size="17" class="spin" />
         <CheckCircle v-else :size="17" />
-        <span v-if="state.scanning">正在更新 Git 状态…</span>
+        <span v-if="state.scanning">{{ state.scanFetch ? '正在获取远端状态…' : '正在更新 Git 状态…' }}</span>
         <span v-else>{{ lastScanLabel }}</span>
         <small v-if="state.scanProgress.total">{{ state.scanProgress.completed }}/{{ state.scanProgress.total }}</small>
         <button
           class="scan-refresh"
           type="button"
-          title="刷新 Git 状态"
-          aria-label="刷新 Git 状态"
+          title="刷新并获取远端状态（fetch）"
+          aria-label="刷新并获取远端状态"
           :disabled="state.scanning"
-          @click="startScan()"
+          @click="startScan({ fetch: true })"
         >
           <ArrowClockwise :size="17" :class="{ spin: state.scanning }" />
         </button>
@@ -91,6 +92,11 @@ const lastScanLabel = computed(() => {
     </aside>
 
     <section class="workspace">
+      <div v-if="state.scanFailures.length && !state.scanning" class="scan-failures" role="alert">
+        <details><summary>{{ state.scanFailures.length }} 个代码库刷新失败，远端差异可能不是最新的</summary>
+          <p v-for="(failure, index) in state.scanFailures" :key="index"><strong>{{ failure.name }}</strong>：{{ failure.message }}</p>
+        </details>
+      </div>
       <div v-if="state.loading" class="center-state">
         <CircleNotch :size="28" class="spin" />
         <strong>正在读取本机项目…</strong>
@@ -106,4 +112,5 @@ const lastScanLabel = computed(() => {
       </div>
     </Transition>
   </main>
+  <OperationProgress />
 </template>

@@ -53,3 +53,41 @@ describe('renderer store', () => {
     expect(store.state.lastScanCompletedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
+
+it('远端刷新传递 fetch，保留差异并明确报告局部失败', async () => {
+  vi.resetModules();
+  const startScan = vi.fn(async () => ({ entries: [{ project: { name: '项目' }, repositories: [
+    { repository: { id: 'ok', name: '成功库' }, status: { kind: 'git', ahead: 2, behind: 3 } },
+    { repository: { id: 'failed', name: '失败库' }, status: { kind: 'git', fetchError: '远端连接失败' } },
+  ] }] }));
+  vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: { startScan } });
+  try {
+    const store = await import('./store.js');
+    await store.startScan({ fetch: true });
+    expect(startScan).toHaveBeenCalledWith({ fetch: true });
+    expect(store.state.statusByRepository.ok.behind).toBe(3);
+    expect(store.state.scanFailures).toEqual([{ name: '项目/失败库', message: '远端连接失败' }]);
+    expect(store.state.notice.kind).toBe('error');
+    expect(store.interactionBlocked.value).toBe(false);
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});
+
+it('操作全程保留 loading，阻止重复执行，失败后解除遮罩并提示错误', async () => {
+  vi.resetModules();
+  vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: {} });
+  try {
+    const store = await import('./store.js');
+    const pending = deferred();
+    const operation = store.runAction(async () => { await pending.promise; throw new Error('网络失败'); }, null, { title: '正在推送', detail: '仓库 A' });
+    expect(store.interactionBlocked.value).toBe(true);
+    expect(store.state.operation.title).toBe('正在推送');
+    const duplicate = vi.fn();
+    await store.withOperation('重复操作', '', duplicate);
+    expect(duplicate).not.toHaveBeenCalled();
+    pending.resolve();
+    await expect(operation).rejects.toThrow('网络失败');
+    expect(store.state.operation).toBeNull();
+    expect(store.interactionBlocked.value).toBe(false);
+    expect(store.state.notice.message).toBe('网络失败');
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});
