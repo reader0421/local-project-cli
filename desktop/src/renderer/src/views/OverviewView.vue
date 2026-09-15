@@ -5,12 +5,10 @@ import {
   PhGitBranch as GitBranch,
   PhPencilSimple as PencilSimple,
   PhUploadSimple as UploadSimple,
-  PhArrowClockwise as ArrowClockwise,
-  PhCloudArrowDown as CloudArrowDown,
   PhPlus as Plus,
   PhCheckCircle as CheckCircle,
 } from '@phosphor-icons/vue';
-import { projects, repositories, selectRepository, startScan, state } from '../store.js';
+import { projects, repositories, selectRepository, state } from '../store.js';
 import StatusPill from '../components/StatusPill.vue';
 import BaseModal from '../components/BaseModal.vue';
 import { api, runAction } from '../store.js';
@@ -28,7 +26,6 @@ async function addProject() {
   await runAction(() => api.addProject({ name: form.value.name, workspacePath: form.value.workspacePath || undefined }), '项目已添加');
   showAdd.value = false;
   form.value = { name: '', workspacePath: '' };
-  await startScan();
 }
 </script>
 
@@ -41,7 +38,6 @@ async function addProject() {
         <p>快速确认本机项目状态，以及今天还需要处理的工作。</p>
       </div>
       <div class="header-actions">
-        <button class="button secondary" @click="startScan({ fetch: true })"><CloudArrowDown :size="18" />获取远端状态</button>
         <button class="button primary" @click="showAdd = true"><Plus :size="18" />添加项目</button>
       </div>
     </header>
@@ -56,7 +52,6 @@ async function addProject() {
     <section class="content-section attention-section">
       <div class="section-heading">
         <div><h2>需要处理</h2><p>Git 异常、未提交修改、未推送提交和需要人工确认的代码库。</p></div>
-        <button class="button ghost" @click="startScan()"><ArrowClockwise :size="17" />刷新</button>
       </div>
       <div v-if="attention.length" class="attention-grid">
         <button v-for="item in attention" :key="item.repository.id" class="attention-card" @click="selectRepository(item.project.id, item.repository.id)">

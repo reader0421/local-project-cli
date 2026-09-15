@@ -178,7 +178,7 @@ export const mockApi = {
   addRepository: async ({ projectId, name, path, ...rest }) => {
     const project = registry.projects.find((item) => item.id === projectId);
     const { openerId, ...repositoryFields } = rest;
-    project.repositories.push({
+    const repository = {
       id: crypto.randomUUID(),
       name,
       slug: name.toLowerCase(),
@@ -187,8 +187,9 @@ export const mockApi = {
       updatedAt: now,
       ...repositoryFields,
       ...(openerId ? { defaultOpenerId: openerId } : {}),
-    });
-    return response();
+    };
+    project.repositories.push(repository);
+    return response(repository);
   },
   updateRepository: async (id, changes) => {
     for (const project of registry.projects) {
@@ -214,8 +215,8 @@ export const mockApi = {
   copyRepositoryPath: async () => '/Users/demo/Projects/Local Project/local-project-desktop',
   getRepositoryStatus: async (id) => entries().flatMap((entry) => entry.repositories).find((item) => item.repository.id === id)?.status,
   fetchRepository: async (id) => entries().flatMap((entry) => entry.repositories).find((item) => item.repository.id === id)?.status,
-  pushRepository: async () => true,
-  pullRepository: async () => true,
+  pushRepository: async (id) => ({ ...await mockApi.getRepositoryStatus(id), ahead: 0, unpushedCommits: [] }),
+  pullRepository: async (id) => ({ ...await mockApi.getRepositoryStatus(id), behind: 0, remoteCommits: [] }),
   chooseDirectory: async () => '/Users/demo/Projects/new-repository',
   chooseRegistry: async () => response(),
   showRegistry: async () => true,

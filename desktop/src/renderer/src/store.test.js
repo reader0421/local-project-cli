@@ -119,3 +119,27 @@ it('详情页刷新只更新指定代码库，fetch 不触发全量扫描，失�
     expect(store.state.operation).toBeNull();
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });
+
+it('注册表更新只清理失效仓库缓存，切换注册表时清空缓存，不扫描 Git', async () => {
+  vi.resetModules();
+  const startScan = vi.fn();
+  vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: { startScan } });
+  try {
+    const store = await import('./store.js');
+    const snapshot = (registryPath, repositories) => ({ registryPath, registry: { projects: [{ id: 'p', repositories }], openers: [], settings: {} } });
+    const a = { id: 'a', path: '/tmp/a' };
+    const b = { id: 'b', path: '/tmp/b' };
+    const c = { id: 'c', path: '/tmp/c' };
+    await store.runAction(async () => snapshot('/tmp/registry.json', [a, b, c]));
+    store.state.statusByRepository = { a: { kind: 'git', ahead: 1 }, b: { kind: 'git' }, c: { kind: 'git' } };
+    const retained = store.state.statusByRepository.a;
+    await store.runAction(async () => snapshot('/tmp/registry.json', [a, { ...b, path: '/tmp/b-new' }]));
+    expect(store.state.statusByRepository).toEqual({ a: retained });
+    expect(store.state.statusByRepository.a).toBe(retained);
+    store.state.lastScanCompletedAt = '2026-09-15T00:00:00.000Z';
+    await store.runAction(async () => snapshot('/tmp/other.json', [a]));
+    expect(store.state.statusByRepository).toEqual({});
+    expect(store.state.lastScanCompletedAt).toBeNull();
+    expect(startScan).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});

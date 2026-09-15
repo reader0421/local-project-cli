@@ -10,7 +10,7 @@ import {
   PhGithubLogo as GithubLogo,
   PhSun as Sun,
 } from '@phosphor-icons/vue';
-import { api, runAction, startScan, state } from '../store.js';
+import { api, runAction, state } from '../store.js';
 import { themePreference, resolvedTheme, themeError, setThemePreference } from '../theme.js';
 
 const terminalSaving = ref(false);
@@ -24,12 +24,7 @@ async function changeTerminal(event) {
 const defaultOpener = computed(() => state.registry.openers.find((item) => item.id === state.registry.settings.defaultOpenerId));
 
 async function chooseRegistry() {
-  const response = await runAction(() => api.chooseRegistry(), '注册表已切换');
-  if (response) {
-    state.registry = response.registry;
-    state.registryPath = response.registryPath;
-    await startScan();
-  }
+  await runAction(() => api.chooseRegistry(), '注册表已切换，请点击右上角刷新读取 Git 状态');
 }
 
 async function changeDefault(event) {
@@ -62,7 +57,7 @@ async function changeDefault(event) {
         <div class="setting-row"><div><span>当前路径</span><code>{{ state.registryPath }}</code></div><div class="row-actions"><button class="icon-button" title="复制路径" @click="api.copyRegistryPath"><Copy :size="18" /></button><button class="icon-button" title="在 Finder 中显示" @click="api.showRegistry"><FolderOpen :size="18" /></button></div></div>
         <div class="setting-row"><div><span>Schema 版本</span><strong>{{ state.schemaVersion }}</strong></div><span class="compatibility">兼容</span></div>
         <div class="setting-row"><div><span>自定义注册表</span><p>切换前会验证目标 JSON；失败时保留当前配置。</p></div><button class="button secondary" @click="chooseRegistry">选择文件</button></div>
-        <div class="setting-row"><div><span>重新读取</span><p>获取 CLI 或其他 Desktop 实例写入的最新内容。</p></div><button class="button secondary" @click="startScan()"><ArrowClockwise :size="17" />重新读取</button></div>
+        <div class="setting-row"><div><span>重新读取</span><p>获取 CLI 或其他 Desktop 实例写入的最新内容。</p></div><button class="button secondary" @click="runAction(() => api.getState(), '注册表已重新读取')"><ArrowClockwise :size="17" />重新读取</button></div>
       </div>
     </section>
 

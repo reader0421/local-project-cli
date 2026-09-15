@@ -33,7 +33,7 @@ import {
   selectedStatus,
   selectProject,
   selectRepository,
-  startScan,
+  runRepositoryAction,
   state,
 } from '../store.js';
 
@@ -121,7 +121,7 @@ function formattedWebhookResponse(result) {
 }
 const localGitStates = computed(() => {
   const status = selectedStatus.value;
-  if (!status) return [{ tone: 'loading', text: '正在读取 Git 状态' }];
+  if (!status) return [{ tone: 'loading', text: state.scanning ? '正在读取 Git 状态' : '尚未读取 Git 状态，请刷新当前代码库' }];
   if (status.kind === 'non_git') return [{ tone: 'warning', text: '当前目录尚未初始化 Git' }];
   if (status.kind === 'error') return [{ tone: 'danger', text: 'Git 状态读取失败' }];
   const items = [];
@@ -155,7 +155,6 @@ async function addProject() {
   if (response?.result?.id) selectProject(response.result.id);
   projectForm.value = { name: '', workspacePath: '' };
   modal.value = null;
-  await startScan();
 }
 
 async function addRepository() {
@@ -168,8 +167,10 @@ async function addRepository() {
   }), '代码库已添加');
   repositoryForm.value = { name: '', path: '', openerId: '', openTarget: '' };
   modal.value = null;
-  if (response?.result?.id) selectRepository(selectedProject.value.id, response.result.id);
-  await startScan();
+  if (response?.result?.id) {
+    selectRepository(selectedProject.value.id, response.result.id);
+    await refreshRepository(response.result.id);
+  }
 }
 
 function openAddWebhook() {
@@ -293,18 +294,18 @@ async function copyCurrentPath() {
 async function pushCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.pushRepository(selectedRepository.value.id), '推送完成', { title: '正在推送提交', detail: `${selectedRepository.value.name}：正在将本地提交上传到远端仓库。` });
+    const repositoryId = selectedRepository.value.id;
+    await runRepositoryAction(repositoryId, () => api.pushRepository(repositoryId), '推送完成', { title: '正在推送提交', detail: `${selectedRepository.value.name}：正在将本地提交上传到远端仓库。` });
     modal.value = null;
-    await startScan();
   } finally { busy.value = false; }
 }
 
 async function pullCurrent() {
   busy.value = true;
   try {
-    await runAction(() => api.pullRepository(selectedRepository.value.id), '安全拉取完成', { title: '正在安全拉取', detail: `${selectedRepository.value.name}：正在获取远端、校验状态并拉取提交。` });
+    const repositoryId = selectedRepository.value.id;
+    await runRepositoryAction(repositoryId, () => api.pullRepository(repositoryId), '安全拉取完成', { title: '正在安全拉取', detail: `${selectedRepository.value.name}：正在获取远端、校验状态并拉取提交。` });
     modal.value = null;
-    await startScan();
   } finally { busy.value = false; }
 }
 
@@ -312,14 +313,12 @@ async function removeCurrentRepository() {
   await runAction(() => api.removeRepository(selectedRepository.value.id), '代码库索引已移除，磁盘文件未改动');
   modal.value = null;
   selectProject(selectedProject.value.id);
-  await startScan();
 }
 
 async function removeCurrentProject() {
   await runAction(() => api.removeProject(selectedProject.value.id), '项目索引及 Webhook 配置已移除，磁盘文件未改动');
   modal.value = null;
   selectProject(projects.value[0]?.id || null);
-  await startScan();
 }
 </script>
 
@@ -363,7 +362,7 @@ async function removeCurrentProject() {
               @click="selectRepository(selectedProject.id, repository.id)"
             >
               <span class="entity-initial repository-initial">{{ nameInitial(repository.name) }}</span>
-              <div><strong>{{ repository.name }}</strong><small><GitBranch :size="13" />{{ state.statusByRepository[repository.id]?.branch || '正在获取…' }}</small></div>
+              <div><strong>{{ repository.name }}</strong><small><GitBranch :size="13" />{{ state.statusByRepository[repository.id]?.branch || (state.scanning ? '正在获取…' : '尚未读取') }}</small></div>
               <span class="repo-health" :class="repositoryHealth(state.statusByRepository[repository.id])" />
             </button>
             <p v-if="!selectedProject.repositories.length" class="resource-empty">还没有代码库</p>

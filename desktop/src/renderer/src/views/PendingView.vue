@@ -4,14 +4,12 @@ import {
   PhUploadSimple as UploadSimple,
   PhWarningCircle as WarningCircle,
   PhCheckCircle as CheckCircle,
-  PhCloudArrowDown as CloudArrowDown,
-  PhArrowClockwise as ArrowClockwise,
   PhCode as Code,
   PhGitBranch as GitBranch,
 } from '@phosphor-icons/vue';
 import BaseModal from '../components/BaseModal.vue';
 import { pushEligibility } from '../format.js';
-import { api, repositories, runAction, selectRepository, startScan, state, withOperation } from '../store.js';
+import { api, repositories, runRepositoryAction, selectRepository, state, withOperation } from '../store.js';
 
 const modal = ref(null);
 const busy = ref(false);
@@ -25,9 +23,8 @@ function confirmOne(item) { selected.value = item; modal.value = 'single'; }
 async function pushOne(item) {
   busy.value = true;
   try {
-    await runAction(() => api.pushRepository(item.repository.id), `已推送 ${item.project.name}/${item.repository.name}`, { title: '正在推送提交', detail: `${item.project.name}/${item.repository.name}：正在上传本地提交。` });
+    await runRepositoryAction(item.repository.id, () => api.pushRepository(item.repository.id), `已推送 ${item.project.name}/${item.repository.name}`, { title: '正在推送提交', detail: `${item.project.name}/${item.repository.name}：正在上传本地提交。` });
     modal.value = null;
-    await startScan();
   } finally { busy.value = false; }
 }
 
@@ -42,7 +39,7 @@ async function pushAll() {
       for (const item of items) {
         state.operation.detail = `正在推送 ${item.project.name}/${item.repository.name}`;
         try {
-          await api.pushRepository(item.repository.id);
+          await runRepositoryAction(item.repository.id, () => api.pushRepository(item.repository.id));
           results.value.push({ item, success: true });
         } catch (error) {
           results.value.push({ item, success: false, message: error.message });
@@ -52,7 +49,6 @@ async function pushAll() {
     });
   } finally { busy.value = false; }
   modal.value = 'results';
-  await startScan();
 }
 </script>
 
@@ -60,11 +56,11 @@ async function pushAll() {
   <div class="page pending-page">
     <header class="page-header">
       <div><p class="eyebrow">SAFE PUSH</p><h1>未推送</h1><p>只推送满足安全条件的已有提交，不处理未提交文件。</p></div>
-      <div class="header-actions"><button class="button secondary" @click="startScan({ fetch: true })"><CloudArrowDown :size="18" />获取远端状态</button><button class="button primary" :disabled="!pushable.length" @click="modal = 'all'"><UploadSimple :size="18" />安全推送全部</button></div>
+      <div class="header-actions"><button class="button primary" :disabled="!pushable.length" @click="modal = 'all'"><UploadSimple :size="18" />安全推送全部</button></div>
     </header>
 
     <section class="content-section">
-      <div class="section-heading"><div><h2>可安全推送 <span>{{ pushable.length }}</span></h2><p>有 upstream、本地存在待推送提交，且没有分支冲突或进行中的 Git 操作。</p></div><button class="button ghost" @click="startScan()"><ArrowClockwise :size="17" />刷新</button></div>
+      <div class="section-heading"><div><h2>可安全推送 <span>{{ pushable.length }}</span></h2><p>有 upstream、本地存在待推送提交，且没有分支冲突或进行中的 Git 操作。</p></div></div>
       <div v-if="pushable.length" class="pending-table">
         <div class="table-head"><span>项目 / 代码库</span><span>分支</span><span>待推送</span><span>最新提交</span><span /></div>
         <div v-for="item in pushable" :key="item.repository.id" class="table-row">

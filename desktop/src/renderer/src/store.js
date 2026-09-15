@@ -49,10 +49,17 @@ function selectDefaults() {
 }
 
 function applySnapshot(snapshot) {
+  const previousPaths = new Map(repositories.value.map(({ repository }) => [repository.id, repository.path]));
+  const registryChanged = state.registryPath !== snapshot.registryPath;
   state.registry = snapshot.registry;
   state.registryPath = snapshot.registryPath;
   state.schemaVersion = snapshot.schemaVersion;
   state.desktopVersion = snapshot.desktopVersion;
+  const currentPaths = new Map(repositories.value.map(({ repository }) => [repository.id, repository.path]));
+  for (const id of Object.keys(state.statusByRepository)) {
+    if (registryChanged || !currentPaths.has(id) || currentPaths.get(id) !== previousPaths.get(id)) delete state.statusByRepository[id];
+  }
+  if (registryChanged) state.lastScanCompletedAt = null;
   selectDefaults();
 }
 
@@ -78,11 +85,20 @@ export async function runAction(action, successMessage, operation) {
   }
 }
 
+export async function runRepositoryAction(repositoryId, action, successMessage, operation) {
+  return runAction(async () => {
+    const status = await action();
+    state.statusByRepository[repositoryId] = status;
+    return status;
+  }, successMessage, operation);
+}
+
 export async function refreshRepository(repositoryId, { fetch = false } = {}) {
   if (interactionBlocked.value || state.scanning) return null;
   const item = repositories.value.find(({ repository }) => repository.id === repositoryId);
   if (!item) return null;
-  const status = await runAction(
+  return runRepositoryAction(
+    repositoryId,
     () => fetch ? api.fetchRepository(repositoryId) : api.getRepositoryStatus(repositoryId),
     fetch ? '当前代码库的远端状态已更新' : '当前代码库的本地状态已刷新',
     {
@@ -90,8 +106,6 @@ export async function refreshRepository(repositoryId, { fetch = false } = {}) {
       detail: `${item.project.name}/${item.repository.name}：${fetch ? '正在获取最新远端提交并更新差异。' : '正在读取本地 Git 状态。'}`,
     },
   );
-  state.statusByRepository[repositoryId] = status;
-  return status;
 }
 
 export async function startScan({ fetch = false, background = false } = {}) {
