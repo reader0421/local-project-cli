@@ -280,13 +280,6 @@ async function openRepository(openerId) {
   } finally { busy.value = false; }
 }
 
-async function fetchCurrent() {
-  busy.value = true;
-  try {
-    await refreshRepository(selectedRepository.value.id, { fetch: true });
-  } finally { busy.value = false; }
-}
-
 async function copyCurrentPath() {
   await runAction(() => api.copyRepositoryPath(selectedRepository.value.id), '代码库地址已复制');
 }
@@ -397,8 +390,7 @@ async function removeCurrentProject() {
       <header class="inspector-header">
         <div class="repo-title"><Monitor :size="32" /><div><h1>{{ selectedRepository.name }}</h1><p>{{ selectedRepository.path }}</p></div></div>
         <div class="header-actions">
-          <button class="icon-button" title="仅刷新当前代码库的本地 Git 状态" aria-label="刷新当前代码库" :disabled="state.scanning || busy" @click="refreshRepository(selectedRepository.id)"><ArrowClockwise :size="18" /></button>
-          <button class="icon-button" title="获取当前代码库的远端状态" aria-label="获取远端状态" :disabled="busy || state.scanning" @click="fetchCurrent"><CloudArrowDown :size="18" /></button>
+          <button class="icon-button" title="刷新当前代码库的本地与远端状态（fetch）" aria-label="刷新当前代码库" :disabled="state.scanning || busy" @click="refreshRepository(selectedRepository.id)"><ArrowClockwise :size="18" /></button>
           <button class="icon-button" title="复制代码库地址" aria-label="复制代码库地址" @click="copyCurrentPath"><Copy :size="18" /></button>
           <button class="icon-button" title="更多操作" aria-label="更多操作" @click="modal = 'more'"><DotsThree :size="22" /></button>
         </div>

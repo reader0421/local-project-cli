@@ -19,7 +19,6 @@ export const state = reactive({
   lastScanCompletedAt: null,
   notice: null,
   operation: null,
-  scanFetch: false,
   scanBlocking: false,
   scanStartedAt: null,
   scanFailures: [],
@@ -93,31 +92,30 @@ export async function runRepositoryAction(repositoryId, action, successMessage, 
   }, successMessage, operation);
 }
 
-export async function refreshRepository(repositoryId, { fetch = false } = {}) {
+export async function refreshRepository(repositoryId) {
   if (interactionBlocked.value || state.scanning) return null;
   const item = repositories.value.find(({ repository }) => repository.id === repositoryId);
   if (!item) return null;
   return runRepositoryAction(
     repositoryId,
-    () => fetch ? api.fetchRepository(repositoryId) : api.getRepositoryStatus(repositoryId),
-    fetch ? '当前代码库的远端状态已更新' : '当前代码库的本地状态已刷新',
+    () => api.fetchRepository(repositoryId),
+    '当前代码库的本地与远端状态已刷新',
     {
-      title: fetch ? '正在获取当前代码库的远端状态' : '正在刷新当前代码库',
-      detail: `${item.project.name}/${item.repository.name}：${fetch ? '正在获取最新远端提交并更新差异。' : '正在读取本地 Git 状态。'}`,
+      title: '正在刷新当前代码库',
+      detail: `${item.project.name}/${item.repository.name}：正在获取最新远端提交，再更新本地状态与远端差异。`,
     },
   );
 }
 
-export async function startScan({ fetch = false, background = false } = {}) {
+export async function startScan({ background = false } = {}) {
   if (state.scanning) return null;
   state.scanning = true;
-  state.scanFetch = fetch;
   state.scanBlocking = !background;
   state.scanStartedAt = Date.now();
   state.scanFailures = [];
   state.scanProgress = { completed: 0, total: repositories.value.length };
   try {
-    const result = await api.startScan({ fetch });
+    const result = await api.startScan({ fetch: true });
     for (const entry of result.entries) {
       for (const item of entry.repositories) {
         state.statusByRepository[item.repository.id] = item.status;
@@ -130,7 +128,7 @@ export async function startScan({ fetch = false, background = false } = {}) {
     state.lastScanCompletedAt = new Date().toISOString();
     if (!background) setNotice(state.scanFailures.length ? 'error' : 'success', state.scanFailures.length
       ? `${state.scanFailures.length} 个代码库未能完整刷新，请查看失败详情`
-      : (fetch ? '已获取远端状态，本地与远端差异已更新' : '本地 Git 状态已刷新'));
+      : '已获取远端状态，本地与远端差异已更新');
     return result;
   } catch (error) {
     setNotice('error', `Git 状态读取失败：${error.message}`);

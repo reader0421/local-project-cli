@@ -7,8 +7,8 @@ const now = ref(Date.now());
 const timer = window.setInterval(() => { now.value = Date.now(); }, 1000);
 onBeforeUnmount(() => window.clearInterval(timer));
 const operation = computed(() => state.operation || (state.scanning ? {
-  title: state.scanFetch ? '正在获取远端并更新差异' : '正在刷新本地 Git 状态',
-  detail: state.scanFetch ? '正在连接远端仓库、获取提交信息，再比较本地与远端分支。' : '正在逐个读取代码库的分支、工作区和提交状态。',
+  title: '正在获取远端并更新差异',
+  detail: '正在连接远端仓库、获取提交信息，再更新本地状态并比较本地与远端分支。',
   startedAt: state.scanStartedAt,
   ...state.scanProgress,
 } : null));

@@ -130,11 +130,11 @@ function registerIpc() {
     return runInTerminal(registry.settings.defaultTerminalId || 'terminal', repository.path, command.command);
   });
   ipcMain.handle('state:get', () => snapshot());
-  ipcMain.handle('scan:start', async (_event, { fetch = false } = {}) => {
+  ipcMain.handle('scan:start', async () => {
     const sequence = ++scanSequence;
     const { registry } = await snapshot();
     const entries = await scanRegistry(registry, {
-      fetch,
+      fetch: true,
       onProgress(progress) {
         sendScanProgress({ sequence, ...progress });
       },

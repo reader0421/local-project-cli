@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 import ProjectsView from './ProjectsView.vue';
 import PendingView from './PendingView.vue';
 import { api, repositories, state } from '../store.js';
@@ -26,8 +26,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('详情页只保留刷新按钮，点击后 fetch 并只更新当前仓库', async () => {
+  const updated = status({ ahead: 0, behind: 3 });
+  const request = vi.spyOn(api, 'fetchRepository').mockResolvedValue(updated);
+  const readStatus = vi.spyOn(api, 'getRepositoryStatus');
+  const untouched = state.statusByRepository.b;
+  wrapper = shallowMount(ProjectsView);
+  expect(wrapper.find('[aria-label="获取远端状态"]').exists()).toBe(false);
+  await wrapper.get('[aria-label="刷新当前代码库"]').trigger('click');
+  await flushPromises();
+  expect(request).toHaveBeenCalledExactlyOnceWith('a');
+  expect(state.statusByRepository.a).toEqual(updated);
+  expect(state.statusByRepository.b).toBe(untouched);
+  expect(readStatus).not.toHaveBeenCalled();
+  expect(startScan).not.toHaveBeenCalled();
+  expect(state.lastScanCompletedAt).toBe('2026-09-15T00:00:00.000Z');
+});
+
 it.each([
-  ['fetchCurrent', 'fetchRepository'],
   ['pushCurrent', 'pushRepository'],
   ['pullCurrent', 'pullRepository'],
 ])('详情页 %s 只使用当前仓库返回的状态，不触发全局刷新', async (action, method) => {
@@ -99,16 +115,16 @@ it.each(['pushCurrent', 'pullCurrent'])('%s 失败时保留缓存，显示错误
   expect(startScan).not.toHaveBeenCalled();
 });
 
-it('新增仓库后只读取新仓库状态', async () => {
+it('新增仓库后只 fetch 并更新新仓库状态', async () => {
   const repository = { id: 'new', name: '新仓库', path: '/tmp/new' };
   const registry = JSON.parse(JSON.stringify(state.registry));
   registry.projects[0].repositories.push(repository);
   vi.spyOn(api, 'addRepository').mockResolvedValue({ registry, registryPath: state.registryPath, result: repository });
-  const readStatus = vi.spyOn(api, 'getRepositoryStatus').mockResolvedValue(status({ ahead: 0 }));
+  const fetchRepository = vi.spyOn(api, 'fetchRepository').mockResolvedValue(status({ ahead: 0 }));
   const untouched = state.statusByRepository.a;
   wrapper = shallowMount(ProjectsView);
   await wrapper.vm.addRepository();
-  expect(readStatus).toHaveBeenCalledExactlyOnceWith('new');
+  expect(fetchRepository).toHaveBeenCalledExactlyOnceWith('new');
   expect(state.selectedRepositoryId).toBe('new');
   expect(state.statusByRepository.new.ahead).toBe(0);
   expect(state.statusByRepository.a).toBe(untouched);

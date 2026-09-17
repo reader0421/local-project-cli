@@ -31,7 +31,6 @@ it('耗时操作显示对象和持续计时，完成后移除遮罩', async () =
 it('远端扫描显示真实进度，启动扫描不阻断界面', async () => {
   state.scanning = true;
   state.scanBlocking = true;
-  state.scanFetch = true;
   state.scanStartedAt = Date.now();
   state.scanProgress = { completed: 2, total: 5 };
   wrapper = mount(OperationProgress, { global: { stubs: { teleport: true } } });

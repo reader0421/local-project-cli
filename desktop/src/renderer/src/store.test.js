@@ -12,8 +12,9 @@ describe('renderer store', () => {
     vi.resetModules();
   });
 
-  it('先展示注册表页面，再渐进更新 Git 状态', async () => {
+  it('先展示注册表页面，再 fetch 并渐进更新 Git 状态', async () => {
     const scan = deferred();
+    const startScan = vi.fn(() => scan.promise);
     let progressListener;
     const repository = { id: 'repo-1', name: 'repo-1', path: '/tmp/repo-1' };
     const project = { id: 'project-1', name: 'Project 1', repositories: [repository] };
@@ -23,7 +24,7 @@ describe('renderer store', () => {
       setTimeout,
       localProject: {
         getState: async () => ({ registry, registryPath: '/tmp/registry.json', schemaVersion: 1, desktopVersion: '0.1.0' }),
-        startScan: () => scan.promise,
+        startScan,
         onScanProgress(listener) {
           progressListener = listener;
           return () => {};
@@ -39,6 +40,8 @@ describe('renderer store', () => {
       expect(store.state.scanning).toBe(true);
       expect(store.state.selectedRepositoryId).toBe('repo-1');
     });
+    expect(startScan).toHaveBeenCalledExactlyOnceWith({ fetch: true });
+    expect(store.interactionBlocked.value).toBe(false);
 
     const status = { kind: 'git', branch: 'main', ahead: 0, changes: [] };
     progressListener({ completed: 1, total: 1, project, repository, status });
@@ -54,7 +57,7 @@ describe('renderer store', () => {
   });
 });
 
-it('远端刷新传递 fetch，保留差异并明确报告局部失败', async () => {
+it('全局刷新默认 fetch，保留差异并明确报告局部失败', async () => {
   vi.resetModules();
   const startScan = vi.fn(async () => ({ entries: [{ project: { name: '项目' }, repositories: [
     { repository: { id: 'ok', name: '成功库' }, status: { kind: 'git', ahead: 2, behind: 3 } },
@@ -63,7 +66,7 @@ it('远端刷新传递 fetch，保留差异并明确报告局部失败', async (
   vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: { startScan } });
   try {
     const store = await import('./store.js');
-    await store.startScan({ fetch: true });
+    await store.startScan();
     expect(startScan).toHaveBeenCalledWith({ fetch: true });
     expect(store.state.statusByRepository.ok.behind).toBe(3);
     expect(store.state.scanFailures).toEqual([{ name: '项目/失败库', message: '远端连接失败' }]);
@@ -92,7 +95,7 @@ it('操作全程保留 loading，阻止重复执行，失败后解除遮罩并�
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });
 
-it('详情页刷新只更新指定代码库，fetch 不触发全量扫描，失败保留原状态', async () => {
+it('详情页刷新默认 fetch，只更新指定代码库，失败保留原状态', async () => {
   vi.resetModules();
   const local = { kind: 'git', ahead: 1, behind: 0 };
   const remote = { kind: 'git', ahead: 1, behind: 2 };
@@ -105,17 +108,16 @@ it('详情页刷新只更新指定代码库，fetch 不触发全量扫描，失�
     store.state.registry.projects = [{ id: 'p', name: '项目', repositories: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }];
     store.state.statusByRepository.b = { kind: 'git', ahead: 5 };
     await store.refreshRepository('a');
-    expect(getRepositoryStatus).toHaveBeenCalledExactlyOnceWith('a');
-    expect(store.state.statusByRepository.a).toEqual(local);
-    await store.refreshRepository('a', { fetch: true });
+    expect(getRepositoryStatus).not.toHaveBeenCalled();
     expect(fetchRepository).toHaveBeenCalledExactlyOnceWith('a');
     expect(store.state.statusByRepository.a).toEqual(remote);
     expect(store.state.statusByRepository.b).toEqual({ kind: 'git', ahead: 5 });
     expect(startScan).not.toHaveBeenCalled();
     expect(store.state.lastScanCompletedAt).toBeNull();
-    getRepositoryStatus.mockRejectedValueOnce(new Error('读取失败'));
-    await expect(store.refreshRepository('a')).rejects.toThrow('读取失败');
+    fetchRepository.mockRejectedValueOnce(new Error('获取远端失败'));
+    await expect(store.refreshRepository('a')).rejects.toThrow('获取远端失败');
     expect(store.state.statusByRepository.a).toEqual(remote);
+    expect(store.state.notice).toEqual({ kind: 'error', message: '获取远端失败' });
     expect(store.state.operation).toBeNull();
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });

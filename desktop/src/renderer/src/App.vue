@@ -59,7 +59,7 @@ const lastScanLabel = computed(() => {
       <div class="scan-indicator" :class="{ active: state.scanning }">
         <CircleNotch v-if="state.scanning" :size="17" class="spin" />
         <CheckCircle v-else :size="17" />
-        <span v-if="state.scanning">{{ state.scanFetch ? '正在获取远端状态…' : '正在更新 Git 状态…' }}</span>
+        <span v-if="state.scanning">正在获取远端并更新状态…</span>
         <span v-else>{{ lastScanLabel }}</span>
         <small v-if="state.scanProgress.total">{{ state.scanProgress.completed }}/{{ state.scanProgress.total }}</small>
         <button
@@ -68,7 +68,7 @@ const lastScanLabel = computed(() => {
           title="刷新并获取远端状态（fetch）"
           aria-label="刷新并获取远端状态"
           :disabled="state.scanning"
-          @click="startScan({ fetch: true })"
+          @click="startScan()"
         >
           <ArrowClockwise :size="17" :class="{ spin: state.scanning }" />
         </button>
