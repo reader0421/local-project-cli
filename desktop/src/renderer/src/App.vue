@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   PhChartDonut as ChartDonut,
   PhFolder as Folder,
@@ -10,6 +10,7 @@ import {
   PhCheckCircle as CheckCircle,
   PhArrowClockwise as ArrowClockwise,
   PhWarningCircle as WarningCircle,
+  PhX as X,
 } from '@phosphor-icons/vue';
 import { initialize, interactionBlocked, startScan, state, unpushedRepositories } from './store.js';
 import OperationProgress from './components/OperationProgress.vue';
@@ -22,6 +23,9 @@ import SettingsView from './views/SettingsView.vue';
 let removeProgressListener;
 onMounted(async () => { removeProgressListener = await initialize(); });
 onBeforeUnmount(() => removeProgressListener?.());
+
+const scanFailuresDismissed = ref(false);
+watch(() => state.scanFailures, () => { scanFailuresDismissed.value = false; });
 
 const navigation = [
   { id: 'overview', label: '概览', icon: ChartDonut },
@@ -92,16 +96,19 @@ const lastScanLabel = computed(() => {
     </aside>
 
     <section class="workspace">
-      <div v-if="state.scanFailures.length && !state.scanning" class="scan-failures" role="alert">
+      <div v-if="state.scanFailures.length && !state.scanning && !scanFailuresDismissed" class="scan-failures" role="alert">
         <details><summary>{{ state.scanFailures.length }} 个代码库刷新失败，远端差异可能不是最新的</summary>
           <p v-for="(failure, index) in state.scanFailures" :key="index"><strong>{{ failure.name }}</strong>：{{ failure.message }}</p>
         </details>
+        <button class="icon-button scan-failures-close" type="button" title="关闭提示" aria-label="关闭刷新失败提示" @click="scanFailuresDismissed = true"><X :size="16" /></button>
       </div>
-      <div v-if="state.loading" class="center-state">
-        <CircleNotch :size="28" class="spin" />
-        <strong>正在读取本机项目…</strong>
+      <div class="workspace-content">
+        <div v-if="state.loading" class="center-state">
+          <CircleNotch :size="28" class="spin" />
+          <strong>正在读取本机项目…</strong>
+        </div>
+        <component :is="currentView" v-else />
       </div>
-      <component :is="currentView" v-else />
     </section>
 
     <Transition name="toast">
