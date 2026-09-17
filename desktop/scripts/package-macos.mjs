@@ -59,7 +59,7 @@ const options = {
     /^\/src($|\/)/,
     /^\/node_modules($|\/)/,
     /^\/release($|\/)/,
-    /^\/resources($|\/)/,
+    /^\/resources\/(?!TrayTemplate\.png$)/,
     /^\/scripts($|\/)/,
     /^\/vendor($|\/)/,
     /^\/electron\.vite\.config\.js$/,

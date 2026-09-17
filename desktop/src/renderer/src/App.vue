@@ -12,7 +12,7 @@ import {
   PhWarningCircle as WarningCircle,
   PhX as X,
 } from '@phosphor-icons/vue';
-import { initialize, interactionBlocked, startScan, state, unpushedRepositories } from './store.js';
+import { initialize, interactionBlocked, navigateTo, startScan, state, unpushedRepositories } from './store.js';
 import OperationProgress from './components/OperationProgress.vue';
 import OverviewView from './views/OverviewView.vue';
 import ProjectsView from './views/ProjectsView.vue';
@@ -86,7 +86,7 @@ const lastScanLabel = computed(() => {
           :key="item.id"
           class="nav-item"
           :class="{ active: state.navigation === item.id }"
-          @click="state.navigation = item.id"
+          @click="navigateTo(item.id)"
         >
           <component :is="item.icon" :size="22" />
           <span>{{ item.label }}</span>
@@ -107,7 +107,7 @@ const lastScanLabel = computed(() => {
           <CircleNotch :size="28" class="spin" />
           <strong>正在读取本机项目…</strong>
         </div>
-        <component :is="currentView" v-else />
+        <component :is="currentView" v-else :key="state.repositoryNavigationSequence" />
       </div>
     </section>
 

@@ -9,11 +9,13 @@ export const state = reactive({
   navigation: 'projects',
   registry: { projects: [], openers: [], settings: {} },
   registryPath: '',
+  projectOrder: [],
   schemaVersion: null,
   desktopVersion: '',
   statusByRepository: {},
   selectedProjectId: null,
   selectedRepositoryId: null,
+  repositoryNavigationSequence: 0,
   scanning: false,
   scanProgress: { completed: 0, total: 0 },
   lastScanCompletedAt: null,
@@ -32,7 +34,10 @@ export async function withOperation(title, detail, action) {
   try { return await action(); } finally { state.operation = null; }
 }
 
-export const projects = computed(() => state.registry.projects || []);
+export const projects = computed(() => {
+  const ranks = new Map(state.projectOrder.map((id, index) => [id, index]));
+  return [...(state.registry.projects || [])].sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
+});
 export const selectedProject = computed(() => projects.value.find((project) => project.id === state.selectedProjectId) || null);
 export const selectedRepository = computed(() => selectedProject.value?.repositories.find((repository) => repository.id === state.selectedRepositoryId) || null);
 export const repositories = computed(() => projects.value.flatMap((project) => project.repositories.map((repository) => ({ project, repository, status: state.statusByRepository[repository.id] }))));
@@ -51,6 +56,7 @@ function applySnapshot(snapshot) {
   const previousPaths = new Map(repositories.value.map(({ repository }) => [repository.id, repository.path]));
   const registryChanged = state.registryPath !== snapshot.registryPath;
   state.registry = snapshot.registry;
+  state.projectOrder = snapshot.projectOrder || [];
   state.registryPath = snapshot.registryPath;
   state.schemaVersion = snapshot.schemaVersion;
   state.desktopVersion = snapshot.desktopVersion;
@@ -139,6 +145,19 @@ export async function startScan({ background = false } = {}) {
 }
 
 export async function initialize() {
+  const navigate = async (target) => {
+    if (!target) return;
+    try {
+      // 菜单栏可能在窗口关闭期间读取到 CLI 修改过的注册表。
+      applySnapshot(await api.getState());
+      selectRepository(target.projectId, target.repositoryId, { forceUsage: true });
+      state.repositoryNavigationSequence += 1;
+    } catch (error) {
+      setNotice('error', `打开代码库详情失败：${error.message}`);
+    }
+  };
+  const removeNavigationListener = api.onRepositoryNavigate?.(navigate);
+  const removeUsageListener = api.onUsageError?.((message) => setNotice('error', message));
   const removeProgressListener = api.onScanProgress?.((progress) => {
     state.scanProgress = { completed: progress.completed, total: progress.total };
     if (progress.repository && progress.status) state.statusByRepository[progress.repository.id] = progress.status;
@@ -147,26 +166,45 @@ export async function initialize() {
     applySnapshot(await api.getState());
     state.ready = true;
     state.loading = false;
+    await navigate(await api.navigationReady?.());
     await startScan({ background: true });
   } catch (error) {
     setNotice('error', `启动失败：${error.message}`);
   } finally {
     state.loading = false;
   }
-  return removeProgressListener;
+  return () => {
+    removeProgressListener?.();
+    removeNavigationListener?.();
+    removeUsageListener?.();
+  };
 }
 
 export function selectProject(projectId) {
-  state.selectedProjectId = projectId;
   const project = projects.value.find((item) => item.id === projectId);
-  state.selectedRepositoryId = project?.repositories[0]?.id || null;
-  state.navigation = 'projects';
+  selectRepository(projectId, project?.repositories[0]?.id || null);
 }
 
-export function selectRepository(projectId, repositoryId) {
+function recordVisit(repositoryId) {
+  if (!repositoryId) return;
+  Promise.resolve(api.recordRepositoryVisit?.(repositoryId)).catch((error) => {
+    setNotice('error', `常用次数保存失败：${error.message}`);
+  });
+}
+
+export function navigateTo(navigation) {
+  if (navigation === 'projects' && state.navigation !== 'projects') recordVisit(state.selectedRepositoryId);
+  state.navigation = navigation;
+}
+
+export function selectRepository(projectId, repositoryId, { forceUsage = false } = {}) {
+  const project = projects.value.find((item) => item.id === projectId);
+  if (repositoryId && !project?.repositories.some((repository) => repository.id === repositoryId)) return;
+  const changed = state.navigation !== 'projects' || state.selectedRepositoryId !== repositoryId || state.selectedProjectId !== projectId;
   state.selectedProjectId = projectId;
   state.selectedRepositoryId = repositoryId;
   state.navigation = 'projects';
+  if (changed || forceUsage) recordVisit(repositoryId);
 }
 
 export { api };

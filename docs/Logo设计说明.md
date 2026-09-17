@@ -1,5 +1,18 @@
 # LocalProject Logo
 
+## 2026-09-17 菜单栏图标
+
+新增 `desktop/resources/TrayTemplate.png`：白色实心双层文件夹，Git 分支和外部背景镂空透明。最终采用用户指定的首版黑色图标，直接反转 RGB，逐像素保留 alpha；不采用后续生成或矢量重绘版本。主应用图标保持现状。
+
+黑色源图保存在 `desktop/resources/TraySource.png`，最初由内置 imagegen 根据当前 Logo 生成。复现反色：
+
+```bash
+cd desktop
+pnpm exec electron scripts/build-tray-icon.mjs
+```
+
+Electron 将最终图片标记为 macOS template image，提供 18 pt 与 Retina 的 36 px 表示；系统根据菜单栏配色决定最终黑白显示。打包仅包含最终 PNG，源图和导出脚本保留在源码中。
+
 ## 当前方案：2026-09-15 青绿文件夹
 
 根据实际 Dock 截图的反馈，替换此前粗白轮廓、深色底板的图标。采用瓷白背景、前后两层青绿文件夹和一个米白色 Git 分支符号；通过简化形状与轻微立体层次，改善小尺寸下的识别与视觉重量。

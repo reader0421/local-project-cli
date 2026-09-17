@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const api = {
+  recordRepositoryVisit: (id) => ipcRenderer.invoke('repository:visit', id),
+  navigationReady: () => ipcRenderer.invoke('navigation:ready'),
+  onRepositoryNavigate: (listener) => {
+    const handler = (_event, payload) => listener(payload);
+    ipcRenderer.on('repository:navigate', handler);
+    return () => ipcRenderer.removeListener('repository:navigate', handler);
+  },
+  onUsageError: (listener) => {
+    const handler = (_event, message) => listener(message);
+    ipcRenderer.on('usage:error', handler);
+    return () => ipcRenderer.removeListener('usage:error', handler);
+  },
   setDefaultTerminal: (id) => ipcRenderer.invoke('terminal:default', id),
   saveRepositoryCommand: (repositoryId, input, id) => ipcRenderer.invoke('repository:command-save', { repositoryId, input, id }),
   removeRepositoryCommand: (repositoryId, id) => ipcRenderer.invoke('repository:command-remove', { repositoryId, id }),

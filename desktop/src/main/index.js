@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, rename, writeFile } from 'node:fs/promises';
@@ -34,10 +34,17 @@ import { SCHEMA_VERSION } from '../../../src/constants.js';
 import { triggerWebhook } from '../../../src/webhooks.js';
 import { findRepositoryCommand, saveRepositoryCommand, removeRepositoryCommand, validateTerminal } from '../../../src/repository-commands.js';
 import { runInTerminal } from './command-terminal.js';
+import { UsageStore } from './usage-store.js';
+import trayIconPath from '../../resources/TrayTemplate.png?asset';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 let mainWindow;
 let scanSequence = 0;
+let usageStore;
+let tray;
+let rendererReady = false;
+let pendingNavigation = null;
+let trayMenuLoading = false;
 
 function preferencesPath() {
   return join(app.getPath('userData'), 'preferences.json');
@@ -67,8 +74,10 @@ async function currentRegistryPath() {
 async function snapshot() {
   const registryPath = await currentRegistryPath();
   const registry = await loadRegistry(registryPath);
+  const projectOrder = await usageStore.projectOrder(registryPath, registry.projects);
   return {
     registry,
+    projectOrder,
     registryPath,
     schemaVersion: SCHEMA_VERSION,
     desktopVersion: app.getVersion(),
@@ -104,10 +113,88 @@ function requireProjectWebhook(registry, projectId, webhookId) {
 }
 
 function sendScanProgress(payload) {
-  if (!mainWindow?.isDestroyed()) mainWindow.webContents.send('scan:progress', payload);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('scan:progress', payload);
+}
+
+async function recordUsage(registryPath, projectId, repositoryId) {
+  try {
+    await usageStore.record(registryPath, projectId, repositoryId);
+  } catch (error) {
+    // 统计故障不能阻止原有命令或 webhook 执行。
+    console.error('常用次数保存失败：', error);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('usage:error', '常用次数保存失败，请检查本机应用数据目录是否可写。');
+  }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  app.focus({ steal: true });
+}
+
+async function openTrayRepository(repositoryId) {
+  const { registry, registryPath } = await snapshot();
+  const { project, repository } = requireRepository(registry, repositoryId);
+  pendingNavigation = { projectId: project.id, repositoryId, registryPath };
+  showMainWindow();
+  if (rendererReady) {
+    mainWindow.webContents.send('repository:navigate', pendingNavigation);
+    pendingNavigation = null;
+  }
+  const opener = resolveOpener(registry, project, repository);
+  await openPath(opener, repository.openTarget || repository.path);
+}
+
+function createTray() {
+  if (process.platform !== 'darwin') return;
+  const source = nativeImage.createFromPath(trayIconPath);
+  const icon = source.resize({ width: 18, height: 18 });
+  icon.addRepresentation({ scaleFactor: 2, buffer: source.resize({ width: 36, height: 36 }).toPNG() });
+  icon.setTemplateImage(true);
+  tray = new Tray(icon);
+  tray.setToolTip('LocalProject · 最近常用代码库');
+  tray.setIgnoreDoubleClickEvents(true);
+  const showMenu = async () => {
+    if (trayMenuLoading) return;
+    trayMenuLoading = true;
+    try {
+      const { registry, registryPath } = await snapshot();
+      const entries = await usageStore.trayRepositories(registryPath, registry.projects);
+      tray.popUpContextMenu(Menu.buildFromTemplate([
+        { label: '最近常用代码库 · 24 小时', enabled: false },
+        ...entries.map(({ project, repository }) => ({
+          label: `${project.name} / ${repository.name}`,
+          click: () => openTrayRepository(repository.id).catch((error) => dialog.showErrorBox('打开代码库失败', error.message)),
+        })),
+        ...(!entries.length ? [{ label: '还没有代码库', enabled: false }] : []),
+        { type: 'separator' },
+        { label: '打开 LocalProject', click: showMainWindow },
+        { label: '退出 LocalProject', click: () => app.quit() },
+      ]));
+    } catch (error) {
+      dialog.showErrorBox('读取常用代码库失败', error.message);
+    } finally {
+      trayMenuLoading = false;
+    }
+  };
+  tray.on('click', showMenu);
+  tray.on('right-click', showMenu);
 }
 
 function registerIpc() {
+  ipcMain.handle('repository:visit', async (_event, repositoryId) => {
+    const { registry, registryPath } = await snapshot();
+    const { project, repository } = requireRepository(registry, repositoryId);
+    await recordUsage(registryPath, project.id, repository.id);
+  });
+  ipcMain.handle('navigation:ready', () => {
+    rendererReady = true;
+    const target = pendingNavigation;
+    pendingNavigation = null;
+    return target;
+  });
   ipcMain.handle('terminal:default', (_event, id) => mutateRegistry((registry) => {
     registry.settings.defaultTerminalId = validateTerminal(id);
   }));
@@ -124,9 +211,10 @@ function registerIpc() {
     return command;
   }));
   ipcMain.handle('repository:command-run', async (_event, { repositoryId, id }) => {
-    const { registry } = await snapshot();
-    const { repository } = requireRepository(registry, repositoryId);
+    const { registry, registryPath } = await snapshot();
+    const { project, repository } = requireRepository(registry, repositoryId);
     const command = findRepositoryCommand(repository, id);
+    await recordUsage(registryPath, project.id, repository.id);
     return runInTerminal(registry.settings.defaultTerminalId || 'terminal', repository.path, command.command);
   });
   ipcMain.handle('state:get', () => snapshot());
@@ -155,8 +243,9 @@ function registerIpc() {
     mutateRegistry((registry) => removeProjectWebhook(registry, projectId, id))
   ));
   ipcMain.handle('project:webhook-trigger', async (_event, { projectId, id }) => {
-    const { registry } = await snapshot();
+    const { registry, registryPath } = await snapshot();
     const { webhook } = requireProjectWebhook(registry, projectId, id);
+    await recordUsage(registryPath, projectId);
     return triggerWebhook(webhook);
   });
   ipcMain.handle('repository:add', (_event, { projectId, ...input }) => mutateRegistry(async (registry) => (
@@ -248,6 +337,7 @@ function registerIpc() {
 }
 
 function createWindow() {
+  rendererReady = false;
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 820,
@@ -266,6 +356,11 @@ function createWindow() {
     },
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('closed', () => {
+    rendererReady = false;
+    mainWindow = null;
+  });
+  mainWindow.webContents.on('did-start-loading', () => { rendererReady = false; });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -274,12 +369,36 @@ function createWindow() {
   else mainWindow.loadFile(join(currentDirectory, '../renderer/index.html'));
 }
 
-app.whenReady().then(() => {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+else app.whenReady().then(async () => {
   app.setName('LocalProject');
+  usageStore = new UsageStore(join(app.getPath('userData'), 'usage'));
+  // 在任何交互前固定本次进程的排序，关闭窗口后重新打开也沿用。
+  await snapshot();
   registerIpc();
   createWindow();
+  createTray();
+  const cleanup = setInterval(() => {
+    currentRegistryPath().then((path) => usageStore.cleanup(path)).catch((error) => console.error('清理常用记录失败：', error));
+  }, 60 * 60 * 1000);
+  cleanup.unref();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
+  });
+  app.on('second-instance', showMainWindow);
+}).catch((error) => {
+  dialog.showErrorBox('启动失败', error.message);
+  app.quit();
+});
+
+let quitAfterFlush = false;
+app.on('before-quit', (event) => {
+  if (!usageStore || quitAfterFlush) return;
+  event.preventDefault();
+  usageStore.flush().finally(() => {
+    quitAfterFlush = true;
+    app.quit();
   });
 });
 

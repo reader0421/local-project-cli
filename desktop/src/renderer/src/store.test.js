@@ -12,6 +12,65 @@ describe('renderer store', () => {
     vi.resetModules();
   });
 
+  it('使用启动排序展示，自动选择不计数，真实切换和返回详情各计一次', async () => {
+    const recordRepositoryVisit = vi.fn(async () => {});
+    const registry = { projects: [
+      { id: 'p1', repositories: [{ id: 'r1' }, { id: 'r2' }] },
+      { id: 'p2', repositories: [{ id: 'r3' }] },
+    ] };
+    const snapshot = { registry, registryPath: '/test.json', projectOrder: ['p2', 'p1'] };
+    vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: {
+      getState: async () => snapshot,
+      startScan: async () => ({ entries: [] }),
+      recordRepositoryVisit,
+    } });
+    const store = await import('./store.js');
+    await store.initialize();
+    expect(store.projects.value.map((project) => project.id)).toEqual(['p2', 'p1']);
+    expect(store.state.selectedRepositoryId).toBe('r3');
+    expect(recordRepositoryVisit).not.toHaveBeenCalled();
+    store.selectProject('p1');
+    store.selectRepository('p1', 'r1');
+    store.selectRepository('p1', 'r2');
+    store.selectRepository('p1', 'missing');
+    store.navigateTo('settings');
+    store.navigateTo('projects');
+    expect(recordRepositoryVisit.mock.calls).toEqual([['r1'], ['r2'], ['r2']]);
+    await store.runAction(async () => snapshot);
+    expect(store.projects.value.map((project) => project.id)).toEqual(['p2', 'p1']);
+    expect(registry.projects.map((project) => project.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('窗口重建先完成注册表读取再接收菜单栏目标，不被启动扫描覆盖', async () => {
+    let onNavigate;
+    const cleanup = vi.fn();
+    const scan = deferred();
+    const recordRepositoryVisit = vi.fn(async () => {});
+    const registry = { projects: [{ id: 'p', repositories: [{ id: 'r1' }, { id: 'r2' }] }] };
+    vi.stubGlobal('window', { setTimeout: vi.fn(), localProject: {
+      getState: async () => ({ registry, registryPath: '/test.json' }),
+      startScan: () => scan.promise,
+      recordRepositoryVisit,
+      onRepositoryNavigate: (listener) => { onNavigate = listener; return cleanup; },
+      navigationReady: async () => ({ projectId: 'p', repositoryId: 'r2' }),
+    } });
+    const store = await import('./store.js');
+    const initialization = store.initialize();
+    await vi.waitFor(() => expect(store.state.selectedRepositoryId).toBe('r2'));
+    expect(recordRepositoryVisit).toHaveBeenCalledExactlyOnceWith('r2');
+    expect(store.state.repositoryNavigationSequence).toBe(1);
+    scan.resolve({ entries: [] });
+    const dispose = await initialization;
+    expect(store.state.selectedRepositoryId).toBe('r2');
+    store.navigateTo('settings');
+    await onNavigate({ projectId: 'p', repositoryId: 'r1' });
+    expect(store.state.navigation).toBe('projects');
+    expect(store.state.selectedRepositoryId).toBe('r1');
+    expect(store.state.repositoryNavigationSequence).toBe(2);
+    dispose();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
   it('先展示注册表页面，再 fetch 并渐进更新 Git 状态', async () => {
     const scan = deferred();
     const startScan = vi.fn(() => scan.promise);
