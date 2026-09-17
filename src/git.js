@@ -127,7 +127,7 @@ export async function getGitStatus(path) {
   };
 }
 
-export async function fetchRepository(path, { timeoutMs = 20_000 } = {}) {
+export async function fetchRepository(path, { timeoutMs = 10_000 } = {}) {
   try {
     const inside = await git(path, ['rev-parse', '--is-inside-work-tree'], { timeout: 5000 });
     if (inside !== 'true') return { skipped: 'non_git' };
