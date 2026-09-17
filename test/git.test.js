@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fetchRepository, getGitStatus, getPullEligibility, getPushEligibility, pullRepository, pushRepository } from '../src/git.js';
+import { scanRegistry } from '../src/scanner.js';
 
 const exec = promisify(execFile);
 
@@ -16,6 +18,117 @@ async function git(cwd, ...args) {
 test('non-git directory is a valid status', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'local-project-cli-non-git-'));
   assert.deepEqual(await getGitStatus(directory), { kind: 'non_git', path: directory });
+});
+
+test('fetch skips non-Git directories and repositories without remotes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'local-project-cli-fetch-skip-'));
+  assert.deepEqual(await fetchRepository(directory), { skipped: 'non_git' });
+  await git(directory, 'init', '-b', 'main');
+  assert.deepEqual(await fetchRepository(directory), { skipped: 'no_remote' });
+  const status = await getGitStatus(directory);
+  assert.equal(status.kind, 'git');
+  assert.equal(status.lastCommit, null);
+  const remote = await mkdtemp(join(tmpdir(), 'local-project-cli-empty-remote-'));
+  await git(remote, 'init', '--bare');
+  await git(directory, 'remote', 'add', 'origin', remote);
+  assert.deepEqual(await fetchRepository(directory), { skipped: null });
+});
+
+test('fetch works without an upstream or a matching remote branch and does not modify the worktree', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'local-project-cli-fetch-untracked-'));
+  const remote = join(root, 'remote.git');
+  const source = join(root, 'source');
+  const checkout = join(root, 'checkout');
+  await exec('git', ['init', '--bare', remote]);
+  await mkdir(source);
+  await git(source, 'init', '-b', 'main');
+  await git(source, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'remote commit');
+  await git(source, 'push', remote, 'main');
+  await mkdir(checkout);
+  await git(checkout, 'init', '-b', 'local-only');
+  await git(checkout, 'remote', 'add', 'origin', remote);
+  await writeFile(join(checkout, 'draft.txt'), 'keep this change');
+  assert.deepEqual(await fetchRepository(checkout), { skipped: null });
+  const status = await getGitStatus(checkout);
+  assert.equal(status.upstream, null);
+  assert.equal(status.branch, 'local-only');
+  assert.equal(status.lastCommit, null);
+  assert.equal(await readFile(join(checkout, 'draft.txt'), 'utf8'), 'keep this change');
+  const { stdout } = await exec('git', ['-C', checkout, 'log', '-1', '--format=%s', 'origin/main']);
+  assert.equal(stdout.trim(), 'remote commit');
+});
+
+test('a stalled fetch terminates its descendants and the scan finishes with local status and an error', { timeout: 10_000 }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'local-project-cli-fetch-timeout-'));
+  const remote = join(root, 'remote.git');
+  const directory = join(root, 'work');
+  const transport = join(root, 'transport.cjs');
+  const pidFile = join(root, 'pids.json');
+  await mkdir(directory);
+  await exec('git', ['init', '--bare', remote]);
+  await git(directory, 'init', '-b', 'main');
+  await git(directory, 'remote', 'add', 'origin', remote);
+  await writeFile(transport, `
+    const { spawn } = require('node:child_process');
+    const { writeFileSync } = require('node:fs');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+    writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, child.pid]));
+    process.on('SIGTERM', () => {});
+    setInterval(() => {}, 1000);
+  `);
+  const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  await git(directory, 'config', 'remote.origin.uploadpack', `${quote(process.execPath)} ${quote(transport)}`);
+  t.after(async () => {
+    const pids = JSON.parse(await readFile(pidFile, 'utf8').catch(() => '[]'));
+    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+  });
+  const startedAt = Date.now();
+  const progress = [];
+  const entries = await scanRegistry({ projects: [{ repositories: [
+    { id: 'stalled', path: directory },
+    { id: 'non-git', path: root },
+  ] }] }, {
+    fetch: true,
+    fetchStatus: (path) => fetchRepository(path, { timeoutMs: 1000 }),
+    onProgress: (value) => progress.push(value),
+  });
+  assert.equal(entries[0].repositories[0].status.kind, 'git');
+  assert.match(entries[0].repositories[0].status.fetchError, /获取远端超时/);
+  assert.equal(entries[0].repositories[1].status.kind, 'non_git');
+  assert.equal(entries[0].repositories[1].status.fetchError, undefined);
+  assert.equal(progress.at(-1).completed, 2);
+  assert.ok(Date.now() - startedAt < 4000);
+  const pids = JSON.parse(await readFile(pidFile, 'utf8'));
+  // 等待系统回收已被终止的后代进程。
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (pids.every((pid) => { try { process.kill(pid, 0); return false; } catch { return true; } })) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  for (const pid of pids) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+});
+
+test('HTTP fetch uses HTTP/1.1 and fails authentication without opening an askpass prompt', { timeout: 10_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'local-project-cli-fetch-auth-'));
+  const marker = join(directory, 'prompted');
+  const askpass = join(directory, 'askpass.sh');
+  const versions = [];
+  const server = createServer((request, response) => {
+    versions.push(request.httpVersion);
+    response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="test"', Connection: 'close' });
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  await git(directory, 'init', '-b', 'main');
+  await git(directory, 'remote', 'add', 'origin', `http://127.0.0.1:${server.address().port}/test.git`);
+  await git(directory, 'config', 'credential.helper', '');
+  await git(directory, 'config', 'http.proxy', '');
+  await writeFile(askpass, '#!/bin/sh\ntouch "$(dirname "$0")/prompted"\necho secret\n', { mode: 0o755 });
+  await git(directory, 'config', 'core.askPass', askpass);
+  await assert.rejects(fetchRepository(directory, { timeoutMs: 3000 }), /terminal prompts disabled|unable to get password from user/);
+  assert.ok(versions.length > 0);
+  assert.ok(versions.every((version) => version === '1.1'));
+  await assert.rejects(access(marker), { code: 'ENOENT' });
 });
 
 test('git status reports branch, dirty files and last commit', async () => {

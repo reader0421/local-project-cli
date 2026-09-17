@@ -99,7 +99,7 @@ export async function refreshRepository(repositoryId) {
   return runRepositoryAction(
     repositoryId,
     () => api.fetchRepository(repositoryId),
-    '当前代码库的本地与远端状态已刷新',
+    '当前代码库状态已刷新',
     {
       title: '正在刷新当前代码库',
       detail: `${item.project.name}/${item.repository.name}：正在获取最新远端提交，再更新本地状态与远端差异。`,
